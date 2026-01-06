@@ -174,30 +174,30 @@ def get_model(config):
     Factory function to get model based on configuration.
     
     Args:
-        config: ModelConfig object
+        config: ExperimentConfig object
     
     Returns:
         model: PyTorch model
     """
-    model_type = config.model_type.lower()
+    model_type = config.model.model_type.lower()
     
     if model_type == "basiccnn":
         model = BasicCNN(
-            num_classes=config.num_classes,
-            dropout_rate=config.dropout_rate,
-            use_batch_norm=config.use_batch_norm
+            num_classes=config.model.num_classes,
+            dropout_rate=config.model.dropout_rate,
+            use_batch_norm=config.model.use_batch_norm
         )
     elif model_type == "deepcnn":
         model = DeepCNN(
-            num_classes=config.num_classes,
-            dropout_rate=config.dropout_rate,
-            use_batch_norm=config.use_batch_norm
+            num_classes=config.model.num_classes,
+            dropout_rate=config.model.dropout_rate,
+            use_batch_norm=config.model.use_batch_norm
         )
     elif model_type == "vgglike":
         model = VGGLikeCNN(
-            num_classes=config.num_classes,
-            dropout_rate=config.dropout_rate,
-            use_batch_norm=config.use_batch_norm
+            num_classes=config.model.num_classes,
+            dropout_rate=config.model.dropout_rate,
+            use_batch_norm=config.model.use_batch_norm
         )
     else:
         raise ValueError(f"Unknown model type: {model_type}")

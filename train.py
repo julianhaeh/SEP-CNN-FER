@@ -3,6 +3,7 @@ Main training script for FER CNN experiments.
 """
 import argparse
 import os
+import torch
 from config import ExperimentConfig, DataConfig, ModelConfig, TrainingConfig
 from data_loader import get_dataloaders
 from models import get_model
