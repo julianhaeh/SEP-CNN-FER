@@ -57,10 +57,20 @@ class OurDataset(Dataset):
 
         if(dataset == 'all'):
 
-            affectnetDs = load_dataset("Mauregato/affectnet_short", split='train+val')
-            fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid+test')
+            if split == 'train':
+                affectnetDs = load_dataset("Mauregato/affectnet_short", split='train')
+                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid')
+            elif split == 'test':
+                affectnetDs = load_dataset("Mauregato/affectnet_short", split='val')
+                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='test')
+            elif split == 'all':
+                affectnetDs = load_dataset("Mauregato/affectnet_short", split='train+val')
+                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid+test')
+            else: 
+                raise ValueError("Split must be 'train', 'test' or 'all'.")
+
             
-            print("Processing AffectNet...")
+            print("Processing AffectNet " + split + "...")
             affectnetDs = affectnetDs.map(
                 process_and_filter, 
                 batched=True, 
@@ -68,7 +78,7 @@ class OurDataset(Dataset):
                 remove_columns=["label", "image"]
             )
 
-            print("Processing FER2013...")
+            print("Processing FER2013 " + split + "...")
             fer2013Ds = fer2013Ds.map(
                 process_fer, 
                 batched=True, 
@@ -83,22 +93,20 @@ class OurDataset(Dataset):
             combined_ds = concatenate_datasets([affectnetDs, fer2013Ds])
             shuffled_ds = combined_ds.shuffle(SHUFFLE_SEED)
             
-            final_split = shuffled_ds.train_test_split(test_size=0.1)
-            
-            if split == 'train':
-                self.data = final_split['train']
-            elif split == 'test':
-                self.data = final_split['test']
-            elif split == 'all': 
-                self.data = shuffled_ds
-            else:
-                raise ValueError("Split must be 'train', 'test' or 'all'.")
+            self.data = shuffled_ds
         
         elif(dataset == 'affectnet'):
 
-            affectnetDs = load_dataset("Mauregato/affectnet_short", split='train+val')
+            if split == 'train':
+                affectnetDs = load_dataset("Mauregato/affectnet_short", split='train')
+            elif split == 'test':
+                affectnetDs = load_dataset("Mauregato/affectnet_short", split='val')
+            elif split == 'all':
+                affectnetDs = load_dataset("Mauregato/affectnet_short", split='train+val')
+            else: 
+                raise ValueError("Split must be 'train', 'test' or 'all'.")
             
-            print("Processing AffectNet...")
+            print("Processing AffectNet " + split + "...")
             affectnetDs = affectnetDs.map(
                 process_and_filter, 
                 batched=True, 
@@ -111,22 +119,20 @@ class OurDataset(Dataset):
         
             shuffled_ds = affectnetDs.shuffle(SHUFFLE_SEED)
             
-            final_split = shuffled_ds.train_test_split(test_size=0.1)
-            
-            if split == 'train':
-                self.data = final_split['train']
-            elif split == 'test':
-                self.data = final_split['test']
-            elif split == 'all': 
-                self.data = shuffled_ds
-            else:
-                raise ValueError("Split must be 'train', 'test' or 'all'.")
+            self.data = shuffled_ds
 
         elif(dataset == 'fer2013'):
 
-            fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid+test')
+            if split == 'train':
+                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid')
+            elif split == 'test':
+                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='test')
+            elif split == 'all':
+                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid+test')
+            else: 
+                raise ValueError("Split must be 'train', 'test' or 'all'.")
             
-            print("Processing FER2013...")
+            print("Processing FER2013 " + split + "...")
             fer2013Ds = fer2013Ds.map(
                 process_fer, 
                 batched=True, 
@@ -139,17 +145,7 @@ class OurDataset(Dataset):
         
             shuffled_ds = fer2013Ds.shuffle(SHUFFLE_SEED)
             
-            final_split = shuffled_ds.train_test_split(test_size=0.1)
-            
-            if split == 'train':
-                self.data = final_split['train']
-            elif split == 'test':
-                self.data = final_split['test']
-            elif split == 'all': 
-                self.data = shuffled_ds
-            else: 
-                raise ValueError("Split must be 'train', 'test' or 'all'.")
-
+            self.data = shuffled_ds
         else: 
             raise ValueError("Dataset must be 'all', 'affectnet' or 'fer2013'.")
             
