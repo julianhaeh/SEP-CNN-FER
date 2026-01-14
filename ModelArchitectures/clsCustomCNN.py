@@ -67,7 +67,8 @@ class CustomCNN(nn.Module):
                     out_channels=config['out'],
                     kernel_size=config.get('k', 3),
                     stride=config.get('s', 1),
-                    padding=config.get('p', 1)
+                    padding=config.get('p', 1),
+                    bias=False # This can be set to True when not using any Batchnorm layers, but if see to True with Batchnorm the bias gets lost
                 ))
                 current_channels = config['out'] # Update for next layer
                 
@@ -76,6 +77,12 @@ class CustomCNN(nn.Module):
                 
             elif config['type'] == 'pool':
                 self.features.add_module(f"pool_{i}", nn.MaxPool2d(2, 2))
+
+            elif config['type'] == 'norm': 
+                self.feature_layers.add_module(
+                    f"norm_{i}",
+                    nn.BatchNorm2d(config['out'])
+                )
 
         # Perform one dummy pass through the layers from before to determine the input channel dimension for the first fully connected layer
         with torch.no_grad():
