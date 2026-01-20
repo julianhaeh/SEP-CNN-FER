@@ -1,12 +1,16 @@
+"""
+This file defines a CustomCNN class, which allows for flexible definition of CNN architectures. For details on how to initialize the architectures, 
+see the documentation of the __init__ method.
+"""
+
+
+
 import torch
 import torch.nn as nn
 
 INPUT_SHAPE = (1, 64, 64)  # Hardcoded input shape for our data
 
 class CustomCNN(nn.Module):
-    """
-    A customizable Convolutional Neural Network (CNN) architecture, designed for experimenting with different layer configurations.
-    """
     
     def __init__(self, feature_config, classifier_config):
         """
@@ -31,6 +35,7 @@ class CustomCNN(nn.Module):
                 - 'p': dropout probability
 
         There is no need to define the input dimension of the layers, as it is inferred from the previous layers and the hardcoded input shape.
+        Note that the last layer of the classifier should have an output dimension of 6 for our 6 emotion classes.
         
         Example usage: 
 
@@ -47,7 +52,7 @@ class CustomCNN(nn.Module):
             classifier_config = [
                 {'type' : 'full', 'out': 128},
                 {'type': 'act'},
-                {'type': 'full', 'out': 7}
+                {'type': 'full', 'out': 6}
             ]
 
             CustomCNNModel = CustomCNN(feature_config, classifier_config)

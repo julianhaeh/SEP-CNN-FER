@@ -1,8 +1,6 @@
 """
-This file defines the OurDataset class, which downloads and preprocesses the AffectNet and FER2013 datasets from HuggingFace. 
-It can either load one of the datasets or a combined version of both. The preprocessing includes resizing images to 64x64 pixels, 
-filtering unwanted classes, remapping the labels to a common format, shuffeling the dataset and normalizing the images to [-1, 1].
-With the split argument the desired split can be chosen (train, test or all).
+This file defines the SCNOurDataset class. It is a modified version of the OurDataset class, also returning the 
+index of each sample in the dataset, which is needed for relabeling during training.
 """
 import numpy as np
 from datasets import load_dataset, concatenate_datasets, ClassLabel
@@ -50,7 +48,7 @@ def process_fer(batch):
         new_labels.append(label)
     return {"image": new_images, "label": new_labels}
 
-class OurDataset(Dataset):
+class OurDatasetSCN(Dataset):
     """" 
     The dataset class for this project. Downloads the dataset from HuggingFace. 
     """
@@ -104,7 +102,8 @@ class OurDataset(Dataset):
             combined_ds = concatenate_datasets([affectnetDs, fer2013Ds])
             shuffled_ds = combined_ds.shuffle(SHUFFLE_SEED)
             
-            self.data = np.array(shuffled_ds)
+            self.image = np.array(shuffled_ds['image'])
+            self.label = np.array(shuffled_ds['label'])
         
         elif(dataset == 'affectnet'):
 
@@ -130,7 +129,8 @@ class OurDataset(Dataset):
         
             shuffled_ds = affectnetDs.shuffle(SHUFFLE_SEED)
             
-            self.data = np.array(shuffled_ds)
+            self.image = np.array(shuffled_ds['image'])
+            self.label = np.array(shuffled_ds['label'])
 
         elif(dataset == 'fer2013'):
 
@@ -156,23 +156,22 @@ class OurDataset(Dataset):
         
             shuffled_ds = fer2013Ds.shuffle(SHUFFLE_SEED)
             
-            self.data = np.array(shuffled_ds)
+            self.image = np.array(shuffled_ds['image'])
+            self.label = np.array(shuffled_ds['label'])
         else: 
             raise ValueError("Dataset must be 'all', 'affectnet' or 'fer2013'.")
             
 
     def __getitem__(self, idx):
 
-        example = self.data[idx]
-        
-        img = example['image']
-        label = example['label']
+        image = self.image[idx]
+        label = self.label[idx]
         
         # Convert PIL image to tensor [C, H, W] with values in [-1, 1]
-        img_tensor = self.transform(img)
+        img_tensor = self.transform(image)
         
-        return {"image" : img_tensor, "label" : label}
+        return {"image" : img_tensor, "label" : label, 'index': idx}
     
     def __len__(self):
  
-        return len(self.data)
+        return len(self.image)

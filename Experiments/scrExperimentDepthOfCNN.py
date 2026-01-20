@@ -78,8 +78,6 @@ def train_evaluate_pipeline(model, epochs=5):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    print(f"Starting training on {device}...")
-
     for epoch in range(epochs):
         print(f"\n--- Epoch {epoch+1}/{epochs} ---")
         
@@ -132,13 +130,7 @@ def train_evaluate_pipeline(model, epochs=5):
                 current_acc = 100 * correct / total
                 val_loop.set_postfix(accuracy=f"{current_acc:.2f}%")
 
-                last_inputs = inputs
-                last_labels = labels
-                last_preds = predicted
-
         final_accuracy = 100 * correct / total
-
-        # visualize_batch(last_inputs, last_labels, last_preds, epoch + 1)
         
         # Print a clean summary at the end of the epoch
         print(f"Result Epoch {epoch+1}: Train Loss: {avg_loss:.4f} | Val Accuracy: {final_accuracy:.2f}%")

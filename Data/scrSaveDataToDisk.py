@@ -3,7 +3,6 @@ Script to save the processed data to the disk.
 Data is already processed in order to save space, saving the data is important in case it gets deleted online.
 """
 
-
 import os
 from datasets import load_dataset, ClassLabel
 from PIL import Image

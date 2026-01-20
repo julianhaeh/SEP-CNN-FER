@@ -1,3 +1,6 @@
+"""
+This script generates and saves a batch plot of processed images from our dataset.
+"""
 import matplotlib.pyplot as plt
 from datasets import load_from_disk
 import random
