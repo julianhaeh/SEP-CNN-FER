@@ -24,14 +24,17 @@ from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Data.clsOurDatasetSCN import OurDatasetSCN
 from ModelArchitectures.clsSCNWrapperOfVGG13 import SCN_VGG_Wrapper
 
+# Log for the best performing hyperparameters Beta=0.8592, M1=0.0784, M2=0.4786, RelabelEp=14
+# Hyperparameters used in paper: Beta=0.7, M1=0.15, M2=0.2, RelabelEp= --
+
 # --- PARAMETERS ---
 EPOCHS = 20
 BATCH_SIZE = 1024  # SCN requires large batches for stable ranking
-BETA = 0.85         # Ratio of "High Importance" samples (0.7 = 70%)
+BETA = 0.86         # Ratio of "High Importance" samples (0.7 = 70%)
 MARGIN_1 = 0.15    # Rank Regularization Margin
-MARGIN_2 = 0.2   # Relabeling Margin
-RELABEL_EPOCHS = 10 # Start relabeling after these many epochs
-RELABELING = True # Enable/Disable relabeling
+MARGIN_2 = 0.48   # Relabeling Margin
+RELABEL_EPOCHS = 14 # Start relabeling after these many epochs
+RELABELING = False # Enable/Disable relabeling
 
 # --- DATA LOADERS ---
 # drop_last=True is vital for SCN because the 'beta' calculation depends on batch_size
@@ -42,8 +45,8 @@ EMOTION_DICT = {0: "Angry", 1: "Disgust", 2: "Fear", 3: "Happy", 4: "Sad", 5: "S
 CLASS_NAMES = [val for key, val in sorted(EMOTION_DICT.items())]
 
 # Global weights 
-class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
-# class_weights = torch.tensor([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]) # These weights can be used for testing unweighted CE
+# class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
+class_weights = torch.tensor([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]) # These weights can be used for testing unweighted CE
 
 USE_SCHEDULER = False # Determines wether to use the Cosine Annealing Scheduler
 
@@ -180,6 +183,13 @@ def train_evaluate_pipeline(model, optimizer, scheduler, epochs=50):
             train_loop.set_postfix(loss=f"{loss.item():.4f}", rr_loss=f"{RR_loss:.4f}")
 
         loss_history.append(running_loss / len(trainDataLoader))
+        y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
+        correct = torch.sum(y_true == y_pred).item()
+        total = y_true.size(0)
+        accuracy = correct / total * 100
+        print(f"   [Test Accuracy for Epoch {epoch}: {accuracy:.2f}% ]")
+        
+
 
     return loss_history
 

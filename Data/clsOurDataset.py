@@ -9,6 +9,7 @@ from datasets import load_dataset, concatenate_datasets, ClassLabel
 from PIL import Image
 from torchvision import transforms
 from torch.utils.data import Dataset
+from torchvision.transforms import v2
 
 # Target resolution for all images
 TARGET_SIZE = (64, 64)
@@ -55,15 +56,25 @@ class OurDataset(Dataset):
     The dataset class for this project. Downloads the dataset from HuggingFace. 
     """
 
-    def __init__(self, dataset = 'all', split = 'train'):
+    def __init__(self, dataset = 'all', split = 'train', custom_transform=None):
         """"
         dataset = 'all', 'affectnet' or 'fer2013' 
         split = 'train', 'test' or 'all'
         """
 
+        self.split = split
+        self.TrainTransform = v2.Compose([
+            # v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+            # v2.RandomResizedCrop(size=64, scale=(0.8, 1.0)),
+            v2.RandomHorizontalFlip(p=0.5),
+            # v2.RandAugment(num_ops=1, magnitude=5),            
+            # v2.RandomErasing(p=0.25),   
+        ])
+        self.custom_transform = custom_transform
+
         self.transform = transforms.Compose([ 
             transforms.ToTensor(),   
-            transforms.Normalize(mean=[0.5], std=[0.5])
+            transforms.Normalize(mean=[0.5], std=[0.5]),
         ])
 
         if(dataset == 'all'):
@@ -170,6 +181,11 @@ class OurDataset(Dataset):
         
         # Convert PIL image to tensor [C, H, W] with values in [-1, 1]
         img_tensor = self.transform(img)
+
+        if self.split == 'train' and self.custom_transform is None:
+            img_tensor = self.TrainTransform(img_tensor)
+        elif self.split == 'train' and self.custom_transform is not None:
+            img_tensor = self.custom_transform(img_tensor)
         
         return {"image" : img_tensor, "label" : label}
     

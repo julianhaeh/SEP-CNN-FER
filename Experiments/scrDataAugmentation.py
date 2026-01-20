@@ -1,6 +1,5 @@
 """
-This script runs experiments to evaluate different loss functions and optimizers on the CustomVGG13Reduced architecture.
-It generates combined training loss and accuracy plots per Loss function (comparing all optimizers).
+
 """
 import torch
 import torch.nn as nn
@@ -13,53 +12,34 @@ import numpy as np
 import os
 import itertools
 from torch.optim import lr_scheduler
-
-# --- CUSTOM IMPORTS ---
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Data.clsOurDataset import OurDataset
-from Data.clsOurDatasetNaiveSplit import OurDatasetNaiveSplit
+from torchvision.transforms import v2
 
 # --- PARAMETERS ---
-EPOCHS = 20
+EPOCHS = 1
 BATCH_SIZE = 1024
-
-trainDataLoader = DataLoader(OurDataset(split='train'), batch_size=BATCH_SIZE, shuffle=True)
-valDataLoader = DataLoader(OurDataset(split='test'), batch_size=BATCH_SIZE, shuffle=False)
+VISUALIZE_FIRST_EPOCH = True
 
 EMOTION_DICT = {0: "Angry", 1: "Disgust", 2: "Fear", 3: "Happy", 4: "Sad", 5: "Surprise"}
 CLASS_NAMES = [val for key, val in sorted(EMOTION_DICT.items())]
+
+valDataLoader = DataLoader(OurDataset(split='test'), batch_size=BATCH_SIZE, shuffle=False)
+
+transforms_list = [
+    # ("No Augmentation", v2.Identity()),
+    ("Horizontal Flip", v2.RandomHorizontalFlip(p=0.5)),
+    ("Translation", v2.RandomAffine(degrees=0, translate=(0.1, 0.1))),
+    ("Rotation", v2.RandomRotation(degrees=15)),
+    ("Random Erasing", v2.RandomErasing(p=0.25))
+]
 
 # Global weights 
 class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
 
 USE_SCHEDULER = False # Determines wether to use the Cosine Annealing Scheduler
 
-# --- CONFIGURATIONS ---
-
-loss_configs = [
-    ("Weighted_CE", nn.CrossEntropyLoss(weight=class_weights)),
-    # ("Unweighted_CE", nn.CrossEntropyLoss())
-]
-
-optimizer_configs = [
-    ("Adam", optim.Adam, {"lr": 0.0001}),
-    # ("AdamW", optim.AdamW, {"lr": 0.001, "weight_decay": 1e-2}),
-    # ("SGD_Momentum", optim.SGD, {"lr": 0.001, "momentum": 0.9, "weight_decay": 1e-4})
-]
-
-# --- HELPER FUNCTIONS ---
-
-def calculate_loss(criterion, outputs, labels):
-    """
-    Generic loss calculator.
-    Handles standard losses (Logits only) and Feature-based losses (Logits + Features).
-    """
-    logits = outputs
-
-    if isinstance(criterion, nn.CrossEntropyLoss):
-        return criterion(logits, labels)
-    
-    return criterion(logits, labels)
+criterion = nn.CrossEntropyLoss(weight=class_weights)
 
 def get_all_predictions_torch(model, loader, device):
     model.eval()
@@ -128,45 +108,63 @@ def plot_metric_comparison(history_dict, metric_name, loss_name, filename):
 
 # --- TRAINING LOOP ---
 
-def train_evaluate_pipeline(model, criterion, optimizer, scheduler, epochs=50):
+def train_evaluate_pipeline(model, optimizer, scheduler, dataloader, epochs=30):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     loss_history = []
     accuracy_history = []
-    
-    # Ensure criterion is on device
-    if isinstance(criterion, nn.Module):
-        criterion.to(device)
-
-    # Ensure class weights inside CrossEntropy are on device
-    if isinstance(criterion, nn.CrossEntropyLoss) and criterion.weight is not None:
-        criterion.weight = criterion.weight.to(device)
+    criterion.to(device)
+    criterion.weight.to(device)
 
     for epoch in range(epochs):
         model.train()
         running_loss = 0.0
-        train_loop = tqdm(trainDataLoader, desc=f"Ep {epoch+1}/{epochs}", leave=False)
+        train_loop = tqdm(dataloader, desc=f"Ep {epoch+1}/{epochs}", leave=False)
+
+        if epoch == 0 and VISUALIZE_FIRST_EPOCH:
+
+            rows = 4
+            cols = 8
+            fig, axes = plt.subplots(rows, cols, figsize=(16, 9))
+            batch = next(iter(dataloader))
+            images = batch['image'][:32]
+            labels = batch['label'][:32]
+
+            axes = axes.flatten()
+
+            for i in range(32):
+                image = images[i].numpy().squeeze()
+                label_id = labels[i].item()
+                    
+                axes[i].imshow(image, cmap='gray')
+                axes[i].set_title(EMOTION_DICT.get(label_id, f"Unknown ({label_id})"), fontsize=10)
+                axes[i].axis('off')
+
+            plt.tight_layout()
+            plt.show()
+
         
         for batch in train_loop:
+            
             imgs = batch['image'].to(device)
             targets = batch['label'].to(device)
-            
+                
             optimizer.zero_grad()
-            
+                
             # Forward pass
             outputs = model(imgs)
-            
-            loss = calculate_loss(criterion, outputs, targets)
-            
+                
+            loss = criterion(outputs, targets)
+                
             loss.backward()
             optimizer.step()
-            if scheduler is not None:
+            if scheduler:
                 scheduler.step()
 
             running_loss += loss.item()
             train_loop.set_postfix(loss=f"{loss.item():.4f}")
 
-        loss_history.append(running_loss / len(trainDataLoader))
+        loss_history.append(running_loss / len(dataloader))
         y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
         correct = torch.sum(y_true == y_pred).item()
         total = y_true.size(0)
@@ -182,67 +180,48 @@ def run_experiments():
     os.makedirs("Experiments/Plots", exist_ok=True)
 
     # LOOP 1: Iterate over LOSS FUNCTIONS first
-    for loss_name, loss_fn in loss_configs:
+    for transform_name, transform in transforms_list:
         print(f"\n=========================================")
-        print(f" Evaluating Loss Function: {loss_name}")
+        print(f" Evaluating Transform: {transform_name}")
         print(f"=========================================")
         
         # Dictionaries to store history for ALL optimizers for this specific loss
         combined_loss_history = {}
         combined_accuracy_history = {}
 
-        # LOOP 2: Iterate over OPTIMIZERS
-        for opt_name, opt_class, opt_kwargs in optimizer_configs:
-            print(f"\n   >>> Training with Optimizer: {opt_name}")
-            
-            # 1. INIT ARCHITECTURE (Reset model for every run)
-            model = CustomVGG13Reduced()
-            
-            # 2. INIT OPTIMIZER & SCHEDULER
-            params = list(model.parameters())  
-            optimizer = opt_class(params, **opt_kwargs)
-            
-            if USE_SCHEDULER:
-                scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer, 
-                    T_max=EPOCHS, 
-                    eta_min=0
-                )
-            else:
-                scheduler = None
-            
-            # 3. TRAIN
-            l_hist, a_hist = train_evaluate_pipeline(model, loss_fn, optimizer, scheduler, epochs=EPOCHS)
-            
-            # Store history for combined plotting later
-            combined_loss_history[opt_name] = l_hist
-            combined_accuracy_history[opt_name] = a_hist
+        model = CustomVGG13Reduced()
+        optimizer = optim.Adam(model.parameters(), lr=0.0001)
+        if USE_SCHEDULER:
+            scheduler = lr_scheduler.CosineAnnealingLR(optimizer)
+       
+        trainDataLoader = DataLoader(OurDataset(split='train', custom_transform=transform), batch_size=BATCH_SIZE, shuffle=True)
 
-            # 4. CONFUSION MATRIX (Still generated per specific run)
-            y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
-            cm_tensor = compute_confusion_matrix_torch(y_true, y_pred, num_classes=6)
+        l_hist, a_hist = train_evaluate_pipeline(model, optimizer, scheduler=None, dataloader=trainDataLoader, epochs=EPOCHS)
+        # 4. CONFUSION MATRIX (Still generated per specific run)
+        y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
+        cm_tensor = compute_confusion_matrix_torch(y_true, y_pred, num_classes=6)
             
-            # Print final accuracy
-            final_acc = a_hist[-1]
-            print(f"   [Final Test Accuracy for {opt_name}: {final_acc:.2f}% ]")
+        # Print final accuracy
+        final_acc = a_hist[-1]
+        print(f"   [Final Test Accuracy for Transformation {transform_name}: {final_acc:.2f}% ]")
             
-            cm_filename = f"Experiments/Plots/ConfMatrix_{loss_name}_{opt_name}.png"
-            plot_confusion_matrix(cm_tensor.numpy(), CLASS_NAMES, 
-                                  f"CM: {loss_name} + {opt_name}", 
-                                  cm_filename)
+        cm_filename = f"Experiments/Plots/ConfMatrix_{transform_name}.png"
+        plot_confusion_matrix(cm_tensor.numpy(), CLASS_NAMES, 
+                                f"Transform: {transform_name}", 
+                                cm_filename)
         
         # --- END OF OPTIMIZER LOOP ---
         # Now generate the combined plots for this specific Loss Function
         
-        print(f"\n   >> Generating Combined Plots for {loss_name}...")
+        print(f"\n   >> Generating Combined Plots for {transform_name}...")
         
         # Plot 1: Loss Comparison
-        loss_plot_path = f"Experiments/Plots/Comparison_Loss_{loss_name}.png"
-        plot_metric_comparison(combined_loss_history, "Training Loss", loss_name, loss_plot_path)
+        loss_plot_path = f"Experiments/Plots/Comparison_Loss_{transform_name}.png"
+        plot_metric_comparison(combined_loss_history, "Training Loss", transform_name, loss_plot_path)
 
         # Plot 2: Accuracy Comparison
-        acc_plot_path = f"Experiments/Plots/Comparison_Accuracy_{loss_name}.png"
-        plot_metric_comparison(combined_accuracy_history, "Validation Accuracy", loss_name, acc_plot_path)
+        acc_plot_path = f"Experiments/Plots/Comparison_Accuracy_{transform_name}.png"
+        plot_metric_comparison(combined_accuracy_history, "Validation Accuracy", transform_name, acc_plot_path)
 
 if __name__ == "__main__":
     run_experiments()

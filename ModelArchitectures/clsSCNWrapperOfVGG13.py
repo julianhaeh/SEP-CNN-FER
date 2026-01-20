@@ -14,28 +14,34 @@ import torch.nn as nn
 NUM_CLASSES = 6 # Number of emotion classes
 
 class SCN_VGG_Wrapper(nn.Module):
-    def __init__(self, base_model, drop_rate = 0):
+    def __init__(self, base_model):
         
         super(SCN_VGG_Wrapper, self).__init__()
-        self.drop_rate = drop_rate
-        
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.features = base_model.features 
 
-        fc_in_dim = fc_in_dim = base_model.classifier[0].in_features# original fc layer's in dimention 512
-   
-        self.fc = nn.Linear(fc_in_dim, NUM_CLASSES) # new fc layer 512x7
-        self.alpha = nn.Sequential(nn.Linear(fc_in_dim, 1),nn.Sigmoid())
+        # Base model layers
+        self.features = base_model.features 
+        self.classifier = base_model.classifier
+
+        # SCN Module
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1)) # Avg pool to reduce dimensionality
+        alpha_in_dim = 256 # Input dimension after avg pool
+        self.alpha = nn.Sequential(nn.Linear(alpha_in_dim, 1),nn.Sigmoid()) # Attention weight module
 
     def forward(self, x):
+
+        # Pass through base model feature layer
         x = self.features(x)
 
-        x = self.avgpool(x)
+        # Pass through attention module
+        input_attention = self.avgpool(x) 
+        input_attention = input_attention.view(input_attention.size(0), -1)
+        attention_weights = self.alpha(input_attention)
         
-        if self.drop_rate > 0:
-            x =  nn.Dropout(self.drop_rate)(x)
+        # Flatten x for classifier
         x = x.view(x.size(0), -1)
         
-        attention_weights = self.alpha(x)
-        out = attention_weights * self.fc(x)
+        # Multiply attention weights with classifier output
+        out = attention_weights * self.classifier(x)
+
+        # Return attention weights for rank regularization and final output for prediciton
         return attention_weights, out

@@ -10,7 +10,7 @@ import os
 from tqdm import tqdm
 
 DATASET = 'all'
-SPLIT = 'train'
+SPLIT = 'test'
 
 # Ensure the output directory exists
 os.makedirs("Data/Plots", exist_ok=True)
@@ -60,7 +60,7 @@ for bar in bars:
                 textcoords="offset points",
                 ha='center', va='bottom')
 
-ax.set_title(f"Class Distribution (Total: {total_samples})", fontsize=16)
+# ax.set_title(f"Class Distribution (Total: {total_samples})", fontsize=16)
 ax.set_ylabel("Number of Samples", fontsize=12)
 ax.set_xlabel("Emotion Class", fontsize=12)
 ax.grid(axis='y', linestyle='--', alpha=0.7)
