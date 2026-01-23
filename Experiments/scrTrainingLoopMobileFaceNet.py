@@ -3,6 +3,8 @@ import time
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from ModelArchitectures.clsMobileFaceNet import MobileFacenet
+from Data.clsOurDataset import OurDataset
 
 # from your_dataset_file import OurDataset
 # from your_model_file import MobileFacenet, ArcMarginProduct
