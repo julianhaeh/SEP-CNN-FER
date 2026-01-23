@@ -120,7 +120,7 @@ def train_emotion_mobilefacenet(
             torch.save(
                 {
                     "epoch": epoch,
-                    "backbone_state_dict": model.state_dict(),
+                    "model_state_dict": model.state_dict(),
                     "head_state_dict": head.state_dict(),
                     "test_acc": test_acc,
                 },
