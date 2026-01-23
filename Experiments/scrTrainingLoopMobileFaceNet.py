@@ -12,14 +12,16 @@ from Data.clsOurDataset import OurDataset
 NUM_CLASSES = 6  # Angry, Disgust, Fear, Happy, Sad, Surprise
 
 def train_emotion_mobilefacenet(
-    epochs=20,
+    epochs=80,
     batch_size=256,
     lr=0.05,
-    num_workers=8,
+    num_workers=10,
     save_path=f"mobilefacenet_{time.strftime('%Y%m%d_%H%M%S')}.pth",
     device=None,
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(f"Start mit Batchsize: {batch_size}, Learning Rate: {lr}, Workers: {num_workers}")
 
     train_ds = OurDataset(dataset="all", split="train")
     test_ds  = OurDataset(dataset="all", split="test")
