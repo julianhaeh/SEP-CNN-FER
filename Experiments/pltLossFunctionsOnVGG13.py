@@ -5,7 +5,7 @@ It generates combined training loss and accuracy plots per Loss function (compar
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
+import torch.nn.functional as F 
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import matplotlib.pyplot as plt
