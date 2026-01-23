@@ -28,7 +28,7 @@ class CustomVGG13Reduced(nn.Module):
             nn.ReLU(inplace=True),
 
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout(p=0.25),
+            nn.Dropout2d(p=0.25),
 
             # Block 2
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
@@ -37,7 +37,7 @@ class CustomVGG13Reduced(nn.Module):
             nn.ReLU(inplace=True),
 
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout(p=0.25),
+            nn.Dropout2d(p=0.25),
 
             # Block 3
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
@@ -48,7 +48,7 @@ class CustomVGG13Reduced(nn.Module):
             nn.ReLU(inplace=True),
 
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout(p=0.25),
+            nn.Dropout2d(p=0.25),
 
             # Block 4
             nn.Conv2d(256, 256, kernel_size=3, padding=1),
@@ -59,11 +59,14 @@ class CustomVGG13Reduced(nn.Module):
             nn.ReLU(inplace=True),
 
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout(p=0.25),
+            nn.Dropout2d(p=0.25),
         )
         
         self.classifier = nn.Sequential(
             nn.Linear(256 * 4 * 4, 1024),  # Assuming input images are 64x64
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            nn.Linear(1024, 1024),
             nn.ReLU(inplace=True),
             nn.Dropout(p=0.5),
             nn.Linear(1024, 6)

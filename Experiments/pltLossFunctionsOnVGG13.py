@@ -17,14 +17,16 @@ from torch.optim import lr_scheduler
 # --- CUSTOM IMPORTS ---
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Data.clsOurDataset import OurDataset
-from Data.clsOurDatasetNaiveSplit import OurDatasetNaiveSplit
+
 
 # --- PARAMETERS ---
-EPOCHS = 20
-BATCH_SIZE = 1024
+EPOCHS = 25
+# BATCH_SIZE = 1024
+BATCH_SIZE = 32
 
-trainDataLoader = DataLoader(OurDataset(split='train'), batch_size=BATCH_SIZE, shuffle=True)
-valDataLoader = DataLoader(OurDataset(split='test'), batch_size=BATCH_SIZE, shuffle=False)
+trainDataLoader = DataLoader( OurDataset(split='train'), batch_size=BATCH_SIZE, shuffle=True)
+print("Trainsize:", len(trainDataLoader.dataset))
+valDataLoader = DataLoader( OurDataset(split='test'), batch_size=BATCH_SIZE, shuffle=False)
 
 EMOTION_DICT = {0: "Angry", 1: "Disgust", 2: "Fear", 3: "Happy", 4: "Sad", 5: "Surprise"}
 CLASS_NAMES = [val for key, val in sorted(EMOTION_DICT.items())]

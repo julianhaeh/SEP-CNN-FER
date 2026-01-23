@@ -17,13 +17,13 @@ from Data.clsOurDatasetSCN import OurDatasetSCN
 from ModelArchitectures.clsSCNWrapperOfVGG13 import SCN_VGG_Wrapper
 
 # --- CONSTANTS ---
-EPOCHS = 20
+EPOCHS = 30
 BATCH_SIZE = 1024
 LOG_FILE = "Experiments/Plots/scn_optimization_history.txt"
-RELABELING = False 
+# RELABELING = False 
 
-# Global class weights (moved to device inside training loop)
-CLASS_WEIGHTS = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
+CLASS_WEIGHTS = torch.tensor([1.00, 1.00, 1.00, 1.00, 1.00, 1.00])
+# CLASS_WEIGHTS = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
 
 def evaluate_model(model, loader, device, criterion):
     """Calculates Loss and Accuracy on the Test set."""
@@ -59,10 +59,9 @@ def objective(trial):
     # Optuna will suggest values from these ranges using TPE (Bayesian optimization)
     beta = trial.suggest_float("beta", 0.4, 0.95, step=0.01)
     margin_1 = trial.suggest_float("margin_1", 0.02, 0.5, step=0.01) 
-    # margin_2 = trial.suggest_float("margin_2", 0.05, 0.5, step=0.01)
-    margin_2 = 0.2
-    # relabel_epochs = trial.suggest_int("relabel_epochs", 5, 15)
-    relabel_epochs = 10
+    margin_2 = trial.suggest_float("margin_2", 0.05, 0.5, step=0.01)
+    relabel_epochs = trial.suggest_int("relabel_epochs", 5, 30)
+    relabeling = trial.suggest_categorical("relabeling", [True, False])
     
     # --- 2. SETUP (Fresh for every trial) ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -121,17 +120,15 @@ def objective(trial):
                 RR_loss = diff
             
             # --- RELABELING LOGIC ---
-            if epoch >= relabel_epochs and RELABELING:
+            if epoch >= relabel_epochs and relabeling:
                 with torch.no_grad():
                     sm = torch.softmax(outputs, dim=1)
                     Pmax, predicted_labels = torch.max(sm, 1)
                     Pgt = torch.gather(sm, 1, targets.view(-1, 1)).squeeze()
                     
                     true_or_false = Pmax - Pgt > margin_2
-                    is_low_importance = torch.zeros(batch_sz, dtype=torch.bool, device=device)
-                    is_low_importance[down_idx] = True
                     
-                    true_or_false = true_or_false & is_low_importance
+                    true_or_false = true_or_false
                     update_idx = true_or_false.nonzero().reshape(-1)
                     
                     label_idx = indexes[update_idx] # get samples' index in train_loader
@@ -159,7 +156,7 @@ def objective(trial):
     # --- 5. LOGGING ---
     with open(LOG_FILE, "a") as f:
         f.write(f"Trial {trial.number}: Loss={final_test_loss:.4f}, Acc={final_accuracy:.2f}% | "
-                f"Beta={beta:.4f}, M1={margin_1:.4f}, M2={margin_2:.4f}, RelabelEp={relabel_epochs}\n")
+                f"Beta={beta:.4f}, M1={margin_1:.4f}, M2={margin_2:.4f}, RelabelEp={relabel_epochs}, Relabeling={relabeling}\n")
     
     return final_test_loss
 
@@ -177,7 +174,7 @@ if __name__ == "__main__":
     study = optuna.create_study(direction="minimize")
     
     # n_trials=20 (You can increase this if you have time)
-    study.optimize(objective, n_trials=40)
+    study.optimize(objective, n_trials=60)
 
     print("\noptimization finished!")
     print("Best trial:")

@@ -1,5 +1,5 @@
 """
-This file defines the OurDataset class, which downloads and preprocesses the AffectNet and FER2013 datasets from HuggingFace. 
+This file defines the OurDatasetTuning class, which downloads and preprocesses the AffectNet and FER2013 datasets from HuggingFace. 
 It can either load one of the datasets or a combined version of both. The preprocessing includes resizing images to 64x64 pixels, 
 filtering unwanted classes, remapping the labels to a common format, shuffeling the dataset and normalizing the images to [-1, 1].
 With the split argument the desired split can be chosen (train, test or all).
@@ -7,6 +7,7 @@ With the split argument the desired split can be chosen (train, test or all).
 import numpy as np
 from datasets import load_dataset, concatenate_datasets, ClassLabel
 from PIL import Image
+import torch
 import torch
 from torchvision import transforms
 from torch.utils.data import Dataset
@@ -52,15 +53,15 @@ def process_fer(batch):
         new_labels.append(label)
     return {"image": new_images, "label": new_labels}
 
-class OurDataset(Dataset):
+class OurDatasetTuning(Dataset):
     """
     The dataset class for this project. Downloads the dataset from HuggingFace. 
     """
 
-    def __init__(self, dataset = 'all', split = 'train'):
+    def __init__(self, dataset = 'all', split = 'train', custom_transform=None):
         """
         dataset = 'all', 'affectnet' or 'fer2013' 
-        split = 'train', 'test' or 'all'
+        split = 'train', 'test', 'valid' or 'all'
         """
 
         self.split = split
@@ -71,12 +72,14 @@ class OurDataset(Dataset):
             v2.RandomHorizontalFlip(p=0.5),            
         ])
 
+        self.custom_transform = custom_transform
+
         self.tensor = transforms.ToTensor()
         self.normalize = transforms.Normalize(mean=[0.5], std=[0.5])
-
+    
         if(dataset == 'all'):
 
-            if split == 'train':
+            if split == 'train' or split == 'valid':
                 affectnetDs = load_dataset("Mauregato/affectnet_short", split='train')
                 fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid')
             elif split == 'test':
@@ -112,7 +115,17 @@ class OurDataset(Dataset):
             combined_ds = concatenate_datasets([affectnetDs, fer2013Ds])
             shuffled_ds = combined_ds.shuffle(SHUFFLE_SEED)
             
-            self.data = np.array(shuffled_ds)
+            if split == 'train' or split == 'valid':
+
+                # Since the Shuffle seed is fixed, the split will be the same across different runs
+
+                shuffled_ds= shuffled_ds.train_test_split(test_size=0.1, seed=SHUFFLE_SEED)
+                if split == 'train':
+                    self.data = np.array(shuffled_ds['train'])
+                elif split == 'valid':
+                    self.data = np.array(shuffled_ds['test'])
+            elif split == 'test':
+                self.data = np.array(shuffled_ds)
         
         elif(dataset == 'affectnet'):
 
@@ -138,7 +151,17 @@ class OurDataset(Dataset):
         
             shuffled_ds = affectnetDs.shuffle(SHUFFLE_SEED)
             
-            self.data = np.array(shuffled_ds)
+            if split == 'train' or split == 'valid':
+
+                # Since the Shuffle seed is fixed, the split will be the same across different runs
+                shuffled_ds= shuffled_ds.train_test_split(test_size=0.1, seed=SHUFFLE_SEED)
+                if split == 'train':
+                    self.data = np.array(shuffled_ds['train'])
+                elif split == 'valid':
+                    self.data = np.array(shuffled_ds['test'])
+
+            elif split == 'test':
+                self.data = np.array(shuffled_ds)
 
         elif(dataset == 'fer2013'):
 
@@ -164,7 +187,17 @@ class OurDataset(Dataset):
         
             shuffled_ds = fer2013Ds.shuffle(SHUFFLE_SEED)
             
-            self.data = np.array(shuffled_ds)
+            if split == 'train' or split == 'valid':
+
+                # Since the Shuffle seed is fixed, the split will be the same across different runs
+
+                shuffled_ds= shuffled_ds.train_test_split(test_size=0.1, seed=SHUFFLE_SEED)
+                if split == 'train':
+                    self.data = np.array(shuffled_ds['train'])
+                elif split == 'valid':
+                    self.data = np.array(shuffled_ds['test'])
+            elif split == 'test':
+                self.data = np.array(shuffled_ds)
         else: 
             raise ValueError("Dataset must be 'all', 'affectnet' or 'fer2013'.")
             
@@ -175,15 +208,16 @@ class OurDataset(Dataset):
         
         img = example['image']
         label = example['label']
-
-        img_tensor = self.tensor(img)
-   
-        if self.split == 'train':
-            img_tensor = self.TrainTransform(img_tensor)
-
         
-        img_tensor = self.normalize(img_tensor)
+        img_tensor = self.tensor(img)
 
+        if self.split == 'train' and self.custom_transform is None:
+            img_tensor = self.TrainTransform(img_tensor)
+        elif self.split == 'train' and self.custom_transform is not None:
+            img_tensor = self.custom_transform(img_tensor)
+
+        img_tensor = self.normalize(img_tensor)
+        
         return {"image" : img_tensor, "label" : label}
     
     def __len__(self):
