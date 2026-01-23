@@ -16,7 +16,7 @@ def train_emotion_mobilefacenet(
     batch_size=256,
     lr=0.05,
     num_workers=8,
-    save_path="mobilefacenet_gray64_arcface.pth",
+    save_path=f"mobilefacenet_{time.strftime('%Y%m%d_%H%M%S')}.pth",
     device=None,
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
