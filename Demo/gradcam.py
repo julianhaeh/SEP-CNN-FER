@@ -3,8 +3,12 @@ import torch.nn.functional as F
 
 import torch
 
-def unwrap_model_output(out):
-    
+def unwrap_model_output(out, preferred_k=6):
+    """
+    Pick the tensor that represents class logits.
+    Many models return (embedding, logits) or dicts.
+    We prefer a 2D tensor [B,K] where K == preferred_k (6 emotions).
+    """
     tensors = []
 
     if torch.is_tensor(out):
@@ -17,14 +21,16 @@ def unwrap_model_output(out):
     else:
         return out
 
-    # Prefer 2D tensors (batch x classes)
     t2d = [t for t in tensors if t.ndim == 2]
-    if t2d:
-        # pick smallest K
-        return min(t2d, key=lambda t: t.shape[1])
+    if not t2d:
+        return tensors[0] if tensors else out
 
-    # Fallback: return first tensor if nothing 2D
-    return tensors[0] if tensors else out
+    # 1) Prefer K == 6
+    for t in t2d:
+        if t.shape[1] == preferred_k:
+            return t
+        
+    return min(t2d, key=lambda t: t.shape[1])
 
 def find_last_conv2d(model: torch.nn.Module):
     last = None
@@ -55,7 +61,7 @@ class GradCAM:
         self.model.zero_grad(set_to_none=True)
 
         out = self.model(x)
-        logits = unwrap_model_output(out)
+        logits = unwrap_model_output(out, preferred_k=6)
 
         if logits.ndim != 2:
             raise RuntimeError(f"Expected logits [B,K], got {tuple(logits.shape)}")
