@@ -124,11 +124,19 @@ def main():
         if not args.no_face:
             bb = largest_face_bbox(frame)
             if bb is not None:
-                roi = tuple(map(int, bb))
+                x, y, w, h = map(int, bb)
+
+                pad = 0.2  # 20% padding around the face box
+                x0 = max(0, int(x - pad * w))
+                y0 = max(0, int(y - pad * h))
+                x1 = min(W, int(x + w + pad * w))
+                y1 = min(H, int(y + h + pad * h))
+
+                roi = (x0, y0, max(1, x1 - x0), max(1, y1 - y0))
 
         x, y, w, h = roi
         crop = frame[y:y+h, x:x+w]
-        
+
         can_infer = (frame_idx % args.every_n == 0) and (args.no_face or bb is not None)
         if can_infer:
             inp = preprocess(crop, in_channels=in_channels).to(device)
@@ -144,6 +152,7 @@ def main():
 
             new_conf = float(probs[pred])
             new_heat = heat.detach().cpu().numpy()
+            new_heat = np.squeeze(new_heat)
 
             last_label = EMOTIONS[pred] if pred < len(EMOTIONS) else f"class_{pred}"
             last_roi = roi

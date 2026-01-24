@@ -45,11 +45,14 @@ def draw_label(frame_bgr, text, x=10, y=35):
     cv2.putText(frame_bgr, text, (x, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
     return frame_bgr
 
-def overlay_heatmap(frame_bgr, roi_xywh, heat_01, alpha=0.45, thr=0.35, blur_sigma=3.0):
+def overlay_heatmap(frame_bgr, roi_xywh, heat_01, alpha=0.55, blur_sigma=6.0, gamma=1.4):
     """
-    Overlay heatmap onto ROI, but only where it's strong.
-    - thr: threshold in [0,1] below which we show no heatmap (prevents green wash)
-    - blur_sigma: smooths blocky / dotted CAMs
+    Smooth Grad-CAM overlay:
+
+    heat_01: 2D float array in [0,1]
+    alpha: overall overlay strength
+    blur_sigma: how smooth the blob looks (4–10 usually good)
+    gamma: >1 emphasizes hot regions (1.2–2.0)
     """
     x, y, w, h = roi_xywh
     roi = frame_bgr[y:y+h, x:x+w]
@@ -57,31 +60,30 @@ def overlay_heatmap(frame_bgr, roi_xywh, heat_01, alpha=0.45, thr=0.35, blur_sig
         return frame_bgr
 
     heat = heat_01.astype(np.float32)
+    heat = np.nan_to_num(heat, nan=0.0, posinf=0.0, neginf=0.0)
     heat = np.clip(heat, 0.0, 1.0)
 
-    # Normalize robustly (so colormap uses full range)
+    # Normalize per-frame so the full colormap range is used
     heat = heat - heat.min()
     mx = heat.max()
     if mx > 1e-6:
         heat = heat / mx
+    else:
+        return frame_bgr
 
-    # Resize to ROI size + smooth (this kills the "confetti" look)
+    # Upsample to ROI + smooth (kills speckle)
     heat = cv2.resize(heat, (roi.shape[1], roi.shape[0]), interpolation=cv2.INTER_CUBIC)
     heat = cv2.GaussianBlur(heat, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
 
-    # Emphasize hot regions and suppress weak ones
-    heat = heat ** 1.7
-    mask = heat > thr
+    # Emphasize salient areas
+    heat = np.clip(heat, 0.0, 1.0) ** gamma
 
     heat_u8 = (heat * 255).astype(np.uint8)
     heat_color = cv2.applyColorMap(heat_u8, cv2.COLORMAP_JET)
 
-    # Per-pixel alpha: only strong areas blend in
+    # Alpha follows the heatmap -> smooth blob overlay like the slide
     a = (alpha * heat)[..., None]  # (h,w,1)
     blended = (roi * (1 - a) + heat_color * a).astype(np.uint8)
-
-    # Hard mask: where it's not hot, keep the original ROI
-    blended[~mask] = roi[~mask]
 
     out = frame_bgr.copy()
     out[y:y+h, x:x+w] = blended
