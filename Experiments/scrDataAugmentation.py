@@ -1,3 +1,4 @@
+import torch.nn.init as init
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -27,7 +28,8 @@ EMOTION_DICT = {0: "Angry", 1: "Disgust", 2: "Fear", 3: "Happy", 4: "Sad", 5: "S
 CLASS_NAMES = [val for key, val in sorted(EMOTION_DICT.items())]
 
 valDataLoader = DataLoader(OurDatasetTuning(split='valid'), batch_size=BATCH_SIZE, shuffle=False)
-
+      
+"""
 transforms_list = [
     ("No Augmentation", v2.Identity()),
     ("Horizontal Flip", v2.RandomHorizontalFlip(p=0.5)),
@@ -39,10 +41,36 @@ transforms_list = [
         v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
         v2.RandomRotation(degrees=15),]))    
 ]
+"""
+
+transforms_list = [
+    ("Flip, Affine, Rotation", v2.Compose([v2.RandomHorizontalFlip(p=0.5), 
+                               v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+                               v2.RandomRotation(degrees=15)])),
+
+    ("Flip, Affine",           v2.Compose([v2.RandomHorizontalFlip(p=0.5), 
+                               v2.RandomAffine(degrees=0, translate=(0.1, 0.1))])),
+
+    ("Flip, Rotation",         v2.Compose([v2.RandomHorizontalFlip(p=0.5),        
+                               v2.RandomRotation(degrees=15)])),
+
+    ("Rotation, Affine",       v2.Compose([v2.RandomRotation(degrees=15),
+                               v2.RandomAffine(degrees=0, translate=(0.1, 0.1))]))
+]
 
 # Global weights 
 class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
 criterion = nn.CrossEntropyLoss(weight=class_weights)
+
+def weights_init(m):
+    if isinstance(m, nn.Conv2d):
+        # "fan_out" preserves magnitude in the backward pass
+        init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        if m.bias is not None:
+            init.constant_(m.bias, 0)
+    elif isinstance(m, nn.Linear):
+        init.normal_(m.weight, 0, 0.01) # VGG paper specific for FC layers
+        init.constant_(m.bias, 0)
 
 def set_seed(seed):
     """Ensures reproducibility across runs"""
@@ -114,7 +142,7 @@ def plot_metric_comparison(history_dict, metric_name, loss_name, filename):
     plt.savefig(filename)
     plt.close()
 
-def train_evaluate_pipeline(model, optimizer, dataloader, epochs=20, run_id=0):
+def train_evaluate_pipeline(model, optimizer, scheduler, dataloader, epochs=20, run_id=0):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     loss_history = []
@@ -140,6 +168,7 @@ def train_evaluate_pipeline(model, optimizer, dataloader, epochs=20, run_id=0):
             running_loss += loss.item()
             train_loop.set_postfix(loss=f"{loss.item():.4f}")
 
+        scheduler.step()
         loss_history.append(running_loss / len(dataloader))
         
         # Validation
@@ -182,7 +211,9 @@ def run_experiments():
             
             # Re-init Model & Optimizer
             model = CustomVGG13Reduced()
-            optimizer = optim.AdamW(model.parameters(), lr=0.0001)
+            model.apply(weights_init)  # Initialize weights
+            optimizer = optim.Adam(model.parameters(), lr=0.0001)
+            scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
             
             # Re-init Loader (ensures shuffle is reset based on seed)
             trainDataLoader = DataLoader(OurDatasetTuning(split='train', custom_transform=transform), 
@@ -191,7 +222,7 @@ def run_experiments():
             print(f" > Starting Run {i+1}/{NUM_RUNS} (Seed {current_seed})...")
             
             l_hist, a_hist = train_evaluate_pipeline(
-                model, optimizer, trainDataLoader, epochs=EPOCHS, run_id=i
+                model, optimizer, scheduler, trainDataLoader, epochs=EPOCHS, run_id=i
             )
             
             run_loss_histories[f'Run {i+1}'] = l_hist
