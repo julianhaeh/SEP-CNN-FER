@@ -10,7 +10,7 @@ class ConvBNReLU(nn.Module):
         self.net = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, kernel_size=k, stride=s, padding=p, bias=False),
             nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True),
+            nn.SiLU(inplace=True),                                                  #Test mit SiLu in Conv-Layers und ReLu im FC-Layer
             nn.Dropout2d(dropout) if dropout and dropout > 0 else nn.Identity(),
         )
 
@@ -27,9 +27,9 @@ class OurCNN(nn.Module):
     """
     def __init__(
         self,
-        num_classes: int,
+        num_classes: 6,
         channels=(32, 64, 128, 256),
-        dropout2d=0.0,
+        dropout2d=0.05,
         dropout_fc=0.3,
         fc_dim=256,
     ):
@@ -40,11 +40,13 @@ class OurCNN(nn.Module):
         self.stem = nn.Sequential(
             ConvBNReLU(1, c1, dropout=dropout2d),
             ConvBNReLU(c1, c1, dropout=dropout2d),
+            ConvBNReLU(c1, c1, dropout=dropout2d),
             nn.MaxPool2d(2),  # 64 -> 32
         )
 
         self.stage2 = nn.Sequential(
             ConvBNReLU(c1, c2, dropout=dropout2d),
+            ConvBNReLU(c2, c2, dropout=dropout2d),
             ConvBNReLU(c2, c2, dropout=dropout2d),
             nn.MaxPool2d(2),  # 32 -> 16
         )
@@ -52,11 +54,13 @@ class OurCNN(nn.Module):
         self.stage3 = nn.Sequential(
             ConvBNReLU(c2, c3, dropout=dropout2d),
             ConvBNReLU(c3, c3, dropout=dropout2d),
+            ConvBNReLU(c3, c3, dropout=dropout2d),
             nn.MaxPool2d(2),  # 16 -> 8
         )
 
         self.stage4 = nn.Sequential(
             ConvBNReLU(c3, c4, dropout=dropout2d),
+            ConvBNReLU(c4, c4, dropout=dropout2d),
             ConvBNReLU(c4, c4, dropout=dropout2d),
             nn.MaxPool2d(2),  # 8 -> 4
         )
