@@ -95,9 +95,11 @@ class MobileFacenet(nn.Module):
 
         # CHANGED (1/3): input channels 3 -> 1 for grayscale.
         # Original: ConvBlock(3, 64, 3, 2, 1)
+        
         self.conv1 = ConvBlock(1, 64, 3, 2, 1)
 
         # Unchanged: still operates on 64 channels produced by conv1
+
         self.dw_conv1 = ConvBlock(64, 64, 3, 1, 1, dw=True)
 
         self.inplanes = 64
@@ -113,6 +115,7 @@ class MobileFacenet(nn.Module):
         # - With 64×64 input, the feature map before this layer becomes 4×4.
         #
         # Original: ConvBlock(512, 512, (7, 6), 1, 0, dw=True, linear=True)
+
         self.linear7 = ConvBlock(512, 512, (4, 4), 1, 0, dw=True, linear=True)
 
         self.linear1 = ConvBlock(512, 128, 1, 1, 0, linear=True)
