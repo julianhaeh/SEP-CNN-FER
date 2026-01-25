@@ -67,7 +67,6 @@ class OurDataset(Dataset):
 
         self.TrainTransform = v2.Compose([
             v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
-            v2.RandomRotation(degrees=15),
             v2.RandomHorizontalFlip(p=0.5),            
         ])
 
