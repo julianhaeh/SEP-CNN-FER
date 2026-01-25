@@ -9,7 +9,7 @@ from ModelArchitectures.clsOurCNNArchitecture import OurCNN
 NUM_CLASSES = 6  # Angry, Disgust, Fear, Happy, Sad, Surprise
 
 
-def train_emotion_standardcnn(
+def train_emotion_ourcnn(
     epochs=80,
     batch_size=256,
     lr=3e-4,
@@ -144,4 +144,4 @@ def train_emotion_standardcnn(
 
 
 if __name__ == "__main__":
-    train_emotion_standardcnn()
+    train_emotion_ourcnn()
