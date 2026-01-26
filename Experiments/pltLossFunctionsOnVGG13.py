@@ -46,7 +46,7 @@ loss_configs = [
 optimizer_configs = [
     ("Adam", optim.Adam, {"lr": 0.0001}),
     ("AdamW", optim.AdamW, {"lr": 0.0001, "weight_decay": 1e-4}),
-    ("SGD_Momentum", optim.SGD, {"lr": 0.014, "momentum": 0.9, "weight_decay": 2.2e-4})
+    ("SGD", optim.SGD, {"lr": 0.014, "momentum": 0.9, "weight_decay": 2.2e-4})
 ]
 
 # --- HELPER FUNCTIONS ---
@@ -156,9 +156,9 @@ def train_evaluate_pipeline(model, criterion, optimizer, scheduler, epochs=50):
 
             running_loss += loss.item()
             train_loop.set_postfix(loss=f"{loss.item():.4f}")
-
+           
         if scheduler is not None:
-                scheduler.step()
+            scheduler.step()
         loss_history.append(running_loss / len(trainDataLoader))
         
         # Validation
@@ -193,8 +193,7 @@ def run_experiments():
             
             # 1. INIT ARCHITECTURE
             model = CustomVGG13Reduced()
-            if opt_name == "SGD_Momentum":
-                model.apply(weights_init)   
+            model.apply(weights_init)   
 
             # 2. INIT OPTIMIZER & SCHEDULER
             params = list(model.parameters())  
@@ -203,8 +202,7 @@ def run_experiments():
             if USE_SCHEDULER:
                 scheduler = optim.lr_scheduler.CosineAnnealingLR(
                     optimizer, 
-                    T_max=EPOCHS * len(trainDataLoader), # T_max in steps not epochs for stability
-                    eta_min=0
+                    T_max=EPOCHS
                 )
             else:
                 scheduler = None

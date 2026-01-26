@@ -120,11 +120,18 @@ class OurDatasetTuning(Dataset):
 
                 shuffled_ds= shuffled_ds.train_test_split(test_size=0.1, seed=SHUFFLE_SEED)
                 if split == 'train':
-                    self.data = np.array(shuffled_ds['train'])
+
+                    self.label = np.array(shuffled_ds['train']['label'])
+                    self.image = np.array(shuffled_ds['train']['image'])
                 elif split == 'valid':
-                    self.data = np.array(shuffled_ds['test'])
+
+                    self.label = np.array(shuffled_ds['test']['label'])
+                    self.image = np.array(shuffled_ds['test']['image'])
             elif split == 'test':
-                self.data = np.array(shuffled_ds)
+
+
+                self.label = np.array(shuffled_ds['label'])
+                self.image = np.array(shuffled_ds['image'])
         
         elif(dataset == 'affectnet'):
 
@@ -155,12 +162,18 @@ class OurDatasetTuning(Dataset):
                 # Since the Shuffle seed is fixed, the split will be the same across different runs
                 shuffled_ds= shuffled_ds.train_test_split(test_size=0.1, seed=SHUFFLE_SEED)
                 if split == 'train':
-                    self.data = np.array(shuffled_ds['train'])
+                    self.label = np.array(shuffled_ds['train']['label'])
+                    self.image = np.array(shuffled_ds['train']['image'])
+
                 elif split == 'valid':
-                    self.data = np.array(shuffled_ds['test'])
+                    self.label = np.array(shuffled_ds['test']['label'])
+                    self.image = np.array(shuffled_ds['test']['image'])
+
 
             elif split == 'test':
-                self.data = np.array(shuffled_ds)
+
+                self.label = np.array(shuffled_ds['label'])
+                self.image = np.array(shuffled_ds['image'])
 
         elif(dataset == 'fer2013'):
 
@@ -192,33 +205,36 @@ class OurDatasetTuning(Dataset):
 
                 shuffled_ds= shuffled_ds.train_test_split(test_size=0.1, seed=SHUFFLE_SEED)
                 if split == 'train':
-                    self.data = np.array(shuffled_ds['train'])
+                    self.label = np.array(shuffled_ds['train']['label'])
+                    self.image = np.array(shuffled_ds['train']['image'])
                 elif split == 'valid':
-                    self.data = np.array(shuffled_ds['test'])
+                    self.label = np.array(shuffled_ds['test']['label'])
+                    self.image = np.array(shuffled_ds['test']['image'])
             elif split == 'test':
-                self.data = np.array(shuffled_ds)
+                self.label = np.array(shuffled_ds['label'])
+                self.image = np.array(shuffled_ds['image'])
         else: 
             raise ValueError("Dataset must be 'all', 'affectnet' or 'fer2013'.")
             
 
     def __getitem__(self, idx):
 
-        example = self.data[idx]
-        
-        img = example['image']
-        label = example['label']
+  
+        img = self.image[idx]
+        label = self.label[idx]
         
         img_tensor = self.tensor(img)
 
         if self.split == 'train' and self.custom_transform is None:
             img_tensor = self.TrainTransform(img_tensor)
+
         elif self.split == 'train' and self.custom_transform is not None:
             img_tensor = self.custom_transform(img_tensor)
 
         img_tensor = self.normalize(img_tensor)
         
-        return {"image" : img_tensor, "label" : label}
+        return {"image" : img_tensor, "label" : label, "index": idx}
     
     def __len__(self):
  
-        return len(self.data)
+        return len(self.label)
