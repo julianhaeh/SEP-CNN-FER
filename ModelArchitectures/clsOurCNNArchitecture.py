@@ -16,7 +16,7 @@ class ConvBNReLU(nn.Module):
 
     def forward(self, x):
         return self.net(x)
-
+  
 
 class OurCNN(nn.Module):
     """
