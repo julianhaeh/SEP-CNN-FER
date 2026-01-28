@@ -16,9 +16,9 @@ from torchvision.transforms import v2
 import torch.nn.init as init
 
 # --- CONFIGURATION ---
-N_TRIALS = 70          # How many different hyperparam combinations to try
-EPOCHS_PER_TRIAL = 15  # Keep this lower for tuning (15-20 is usually enough to see trends)
-BATCH_SIZE = 32       # Use 64 as discussed for stability
+N_TRIALS = 70         
+EPOCHS_PER_TRIAL = 15  
+BATCH_SIZE = 32        
 SEED = 42
 
 # Global weights 

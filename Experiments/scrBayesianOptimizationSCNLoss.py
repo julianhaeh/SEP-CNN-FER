@@ -2,6 +2,7 @@
 This script implements Bayesian Optimization using Optuna to tune hyperparameters for training a SCN. 
 The hyperparameters and their evaluation metrics are logged to Experiments/Plots/scn_optimization_history.txt.
 """
+import torch.nn.init as init
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,17 +14,29 @@ import optuna
 # --- USER IMPORTS ---
 # Assuming these are available in your directory structure
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
-from Data.clsOurDatasetSCN import OurDatasetSCN
+from Data.clsOurDatasetTuning import OurDatasetTuning
 from ModelArchitectures.clsSCNWrapperOfVGG13 import SCN_VGG_Wrapper
 
 # --- CONSTANTS ---
-EPOCHS = 30
-BATCH_SIZE = 1024
+EPOCHS = 55
+BATCH_SIZE = 32
 LOG_FILE = "Experiments/Plots/scn_optimization_history.txt"
-# RELABELING = False 
+RELABELING = True
 
 CLASS_WEIGHTS = torch.tensor([1.00, 1.00, 1.00, 1.00, 1.00, 1.00])
 # CLASS_WEIGHTS = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
+
+
+# Weight Intit for SGD, this stops gradient explosion or vanishing gradient
+def weights_init(m):
+    if isinstance(m, nn.Conv2d):
+        # "fan_out" preserves magnitude in the backward pass
+        init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        if m.bias is not None:
+            init.constant_(m.bias, 0)
+    elif isinstance(m, nn.Linear):
+        init.normal_(m.weight, 0, 0.01) # VGG paper specific for FC layers
+        init.constant_(m.bias, 0)
 
 def evaluate_model(model, loader, device, criterion):
     """Calculates Loss and Accuracy on the Test set."""
@@ -60,8 +73,8 @@ def objective(trial):
     beta = trial.suggest_float("beta", 0.4, 0.95, step=0.01)
     margin_1 = trial.suggest_float("margin_1", 0.02, 0.5, step=0.01) 
     margin_2 = trial.suggest_float("margin_2", 0.05, 0.5, step=0.01)
-    relabel_epochs = trial.suggest_int("relabel_epochs", 5, 30)
-    relabeling = trial.suggest_categorical("relabeling", [True, False])
+    relabel_epochs = trial.suggest_int("relabel_epochs", 5, 54)
+    # relabeling = trial.suggest_categorical("relabeling", [True, False])
     
     # --- 2. SETUP (Fresh for every trial) ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -69,17 +82,19 @@ def objective(trial):
     # IMPORTANT: We MUST re-initialize the dataset/loader every trial.
     # The SCN logic modifies labels in-place: trainDataLoader.dataset.data[idx]['label'] = ...
     # If we reuse the loader, Trial 2 starts with Trial 1's modified labels.
-    train_dataset = OurDatasetSCN(split='train')
+    train_dataset = OurDatasetTuning(split='train')
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
     
     # Validation loader can be reused (read-only), but defining here for safety
-    val_loader = DataLoader(OurDatasetSCN(split='test'), batch_size=BATCH_SIZE, shuffle=False)
+    val_loader = DataLoader(OurDatasetTuning(split='valid'), batch_size=BATCH_SIZE, shuffle=False)
     # Init Model
     base_model = CustomVGG13Reduced()
     model = SCN_VGG_Wrapper(base_model).to(device)
+    model.apply(weights_init)
     
     # Init Optimizer 
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
     criterion = nn.CrossEntropyLoss(weight=CLASS_WEIGHTS.to(device))
 
     # --- 3. TRAINING LOOP ---
@@ -120,7 +135,7 @@ def objective(trial):
                 RR_loss = diff
             
             # --- RELABELING LOGIC ---
-            if epoch >= relabel_epochs and relabeling:
+            if epoch >= relabel_epochs:
                 with torch.no_grad():
                     sm = torch.softmax(outputs, dim=1)
                     Pmax, predicted_labels = torch.max(sm, 1)
@@ -146,6 +161,8 @@ def objective(trial):
             epoch=f"{epoch+1}/{EPOCHS}", 
             loss=f"{loss.item():.4f}"
         )
+            
+        scheduler.step()
 
         
     # --- 4. FINAL EVALUATION ---
@@ -156,7 +173,7 @@ def objective(trial):
     # --- 5. LOGGING ---
     with open(LOG_FILE, "a") as f:
         f.write(f"Trial {trial.number}: Loss={final_test_loss:.4f}, Acc={final_accuracy:.2f}% | "
-                f"Beta={beta:.4f}, M1={margin_1:.4f}, M2={margin_2:.4f}, RelabelEp={relabel_epochs}, Relabeling={relabeling}\n")
+                f"Beta={beta:.4f}, M1={margin_1:.4f}, M2={margin_2:.4f}, RelabelEp={relabel_epochs}\n")
     
     return final_test_loss
 
