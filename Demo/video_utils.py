@@ -45,13 +45,14 @@ def draw_label(frame_bgr, text, x=10, y=35):
     cv2.putText(frame_bgr, text, (x, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
     return frame_bgr
 
-def overlay_heatmap(frame_bgr, roi_xywh, heat_01, alpha=0.60, blur_sigma=6.0, gamma=1.5, thr=0.30):
+def overlay_heatmap(frame_bgr, roi_xywh, heat_01, alpha=0.55, blur_sigma=4.0, gamma=1.2, thr=0.12):
     """
-    Smooth Grad-CAM overlay like lecture slides:
+    Smooth Grad-CAM overlay:
     - per-frame normalization
     - blur to remove speckle
     - threshold weak activations
     - alpha follows heat (no full-face tint)
+
     """
     x, y, w, h = roi_xywh
     roi = frame_bgr[y:y+h, x:x+w]
@@ -74,9 +75,17 @@ def overlay_heatmap(frame_bgr, roi_xywh, heat_01, alpha=0.60, blur_sigma=6.0, ga
     heat = cv2.GaussianBlur(heat, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
 
     # Emphasize peaks + suppress weak values
-    heat = np.clip(heat, 0.0, 1.0) ** gamma
-    heat[heat < thr] = 0.0
+    # Contrast stretch FIRST (uses full dynamic range)
+    p1 = np.percentile(heat, 5)
+    p2 = np.percentile(heat, 99)
+    heat = np.clip((heat - p1) / (p2 - p1 + 1e-6), 0, 1)
 
+    # Gentle peak emphasis
+    heat = np.clip(heat, 0.0, 1.0) ** gamma
+
+    # SOFT threshold (avoids hard holes / patchiness)
+    heat = np.clip((heat - thr) / (1.0 - thr + 1e-6), 0, 1)
+    heat = cv2.GaussianBlur(heat, (0, 0), sigmaX=2.0, sigmaY=2.0)
     heat_u8 = (heat * 255).astype(np.uint8)
     cmap = cv2.COLORMAP_TURBO if hasattr(cv2, "COLORMAP_TURBO") else cv2.COLORMAP_JET
     heat_color = cv2.applyColorMap(heat_u8, cmap)
