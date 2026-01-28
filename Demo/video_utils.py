@@ -45,14 +45,13 @@ def draw_label(frame_bgr, text, x=10, y=35):
     cv2.putText(frame_bgr, text, (x, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
     return frame_bgr
 
-def overlay_heatmap(frame_bgr, roi_xywh, heat_01, alpha=0.55, blur_sigma=6.0, gamma=1.4):
+def overlay_heatmap(frame_bgr, roi_xywh, heat_01, alpha=0.60, blur_sigma=6.0, gamma=1.5, thr=0.30):
     """
-    Smooth Grad-CAM overlay:
-
-    heat_01: 2D float array in [0,1]
-    alpha: overall overlay strength
-    blur_sigma: how smooth the blob looks (4–10 usually good)
-    gamma: >1 emphasizes hot regions (1.2–2.0)
+    Smooth Grad-CAM overlay like lecture slides:
+    - per-frame normalization
+    - blur to remove speckle
+    - threshold weak activations
+    - alpha follows heat (no full-face tint)
     """
     x, y, w, h = roi_xywh
     roi = frame_bgr[y:y+h, x:x+w]
@@ -63,31 +62,33 @@ def overlay_heatmap(frame_bgr, roi_xywh, heat_01, alpha=0.55, blur_sigma=6.0, ga
     heat = np.nan_to_num(heat, nan=0.0, posinf=0.0, neginf=0.0)
     heat = np.clip(heat, 0.0, 1.0)
 
-    # Normalize per-frame so the full colormap range is used
+    # Normalize
     heat = heat - heat.min()
     mx = heat.max()
-    if mx > 1e-6:
-        heat = heat / mx
-    else:
+    if mx < 1e-6:
         return frame_bgr
+    heat = heat / mx
 
-    # Upsample to ROI + smooth (kills speckle)
+    # Resize + smooth
     heat = cv2.resize(heat, (roi.shape[1], roi.shape[0]), interpolation=cv2.INTER_CUBIC)
     heat = cv2.GaussianBlur(heat, (0, 0), sigmaX=blur_sigma, sigmaY=blur_sigma)
 
-    # Emphasize salient areas
+    # Emphasize peaks + suppress weak values
     heat = np.clip(heat, 0.0, 1.0) ** gamma
+    heat[heat < thr] = 0.0
 
     heat_u8 = (heat * 255).astype(np.uint8)
-    heat_color = cv2.applyColorMap(heat_u8, cv2.COLORMAP_JET)
+    cmap = cv2.COLORMAP_TURBO if hasattr(cv2, "COLORMAP_TURBO") else cv2.COLORMAP_JET
+    heat_color = cv2.applyColorMap(heat_u8, cmap)
 
-    # Alpha follows the heatmap -> smooth blob overlay like the slide
+    # Alpha is stronger where heat is stronger (prevents "green wash")
     a = (alpha * heat)[..., None]  # (h,w,1)
     blended = (roi * (1 - a) + heat_color * a).astype(np.uint8)
 
     out = frame_bgr.copy()
     out[y:y+h, x:x+w] = blended
     return out
+
 
 def draw_bbox(frame_bgr, roi_xywh, color=(0, 255, 0), thickness=2):
     x, y, w, h = roi_xywh

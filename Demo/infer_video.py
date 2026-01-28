@@ -91,7 +91,13 @@ def main():
     device = torch.device(args.device)
     model, in_channels = load_model(args.weights, device)
 
-    target_layer = find_last_conv2d(model)
+    try:
+        target_layer = model.backbone.conv2
+    except Exception:
+        target_layer = find_last_conv2d(model)
+
+    print("[gradcam] using target layer:", target_layer)
+
     cam_engine = GradCAM(model, target_layer)
 
     cap = cv2.VideoCapture(args.input)
@@ -143,6 +149,10 @@ def main():
             inp.requires_grad_(True)
 
             heat, logits = cam_engine(inp)
+            if frame_idx == args.every_n:
+                h = heat.detach().cpu().numpy()
+                print("[gradcam] heat shape:", h.shape)
+
 
             if frame_idx == args.every_n:
                 print("logits shape:", tuple(logits.shape))  # should be (1,6)
