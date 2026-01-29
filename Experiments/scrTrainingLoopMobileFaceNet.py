@@ -12,10 +12,10 @@ from Data.clsOurDataset import OurDataset
 NUM_CLASSES = 6  # Angry, Disgust, Fear, Happy, Sad, Surprise
 
 def train_emotion_mobilefacenet(
-    epochs=80,
-    batch_size=256,
-    lr=0.05,
-    num_workers=10,
+    epochs=45,
+    batch_size=32,
+    lr=0.014,
+    num_workers=8,
     save_path=f"mobilefacenet_{time.strftime('%Y%m%d_%H%M%S')}.pth",
     device=None,
 ):
@@ -38,12 +38,13 @@ def train_emotion_mobilefacenet(
     model = MobileFacenet().to(device) 
     head = nn.Linear(128, NUM_CLASSES).to(device)
 
+    class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
 
     optimizer = torch.optim.SGD(
         list(model.parameters()) + list(head.parameters()),
-        lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True
+        lr=lr, momentum=0.9, weight_decay=2.2e-4, nesterov=True
     )
 
     # Optional: simple LR schedule
@@ -66,7 +67,7 @@ def train_emotion_mobilefacenet(
             x = batch["image"].to(device, non_blocking=True)  # (B,1,64,64)
             y = torch.as_tensor(batch["label"], device=device).long()
 
-            emb = model(x)               # (B,128)
+            emb = model(x)                  # (B,128)
             logits = head(emb)              # (B,6)
             loss = criterion(logits, y)
 

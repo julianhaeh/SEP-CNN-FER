@@ -10,10 +10,10 @@ NUM_CLASSES = 6  # Angry, Disgust, Fear, Happy, Sad, Surprise
 
 
 def train_emotion_ourcnn(
-    epochs=80,
-    batch_size=256,
+    epochs=45,
+    batch_size=32,
     lr=3e-4,
-    num_workers=10,
+    num_workers=8,
     save_path=f"standardcnn64_{time.strftime('%Y%m%d_%H%M%S')}.pth",
     device=None,
 ):
@@ -50,12 +50,15 @@ def train_emotion_ourcnn(
         fc_dim=256,
     ).to(device)
 
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
+    head = nn.Linear(128, NUM_CLASSES).to(device)
 
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=lr,
-        weight_decay=1e-4,
+    class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
+
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
+
+    optimizer = torch.optim.SGD(
+        list(model.parameters()) + list(head.parameters()),
+        lr=lr, momentum=0.9, weight_decay=2.2e-4, nesterov=True
     )
 
     # LR schedule
