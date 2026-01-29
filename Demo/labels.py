@@ -1,1 +1,1 @@
-EMOTIONS = ["Angry", "Disgusted", "Fearful", "Happy", "Sad", "Surprised"]
+EMOTIONS = ["Angry", "Disgusted", "Fear", "Happy", "Sad", "Surprised"]
