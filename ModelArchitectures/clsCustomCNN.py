@@ -26,6 +26,8 @@ class CustomCNN(nn.Module):
                 - 'p': padding (default 1)
             - Activation Layer: {'type': 'act'}
             - Pooling Layer: {'type': 'pool'}
+            - Dropout Layer: {'type': 'dropout', 'p': float}
+                - 'p': dropout probability
 
         Possible inputs for `classifier_config`:
             - Fully Connected Layer: {'type': 'full', 'out': int}
@@ -84,10 +86,13 @@ class CustomCNN(nn.Module):
                 self.features.add_module(f"pool_{i}", nn.MaxPool2d(2, 2))
 
             elif config['type'] == 'norm': 
-                self.feature_layers.add_module(
+                self.features.add_module(
                     f"norm_{i}",
                     nn.BatchNorm2d(config['out'])
                 )
+
+            elif config['type'] == 'dropout':
+                self.features.add_module(f"drop_{i}", nn.Dropout2d(config['p']))
 
         # Perform one dummy pass through the layers from before to determine the input channel dimension for the first fully connected layer
         with torch.no_grad():
