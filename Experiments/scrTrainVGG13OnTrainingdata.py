@@ -205,6 +205,8 @@ def run_experiments():
         plot_confusion_matrix(cm_tensor.numpy(), CLASS_NAMES, 
                               f"Confusion Matrix: {loss_name}", 
                               cm_filename)
+        
+        torch.save(model.state_dict(), f"Experiments/Models/VGG13_{loss_name}_Acc_{final_acc:.2f}_Model.pth")
 
     # --- Generate combined comparison plots ---
     print(f"\n=========================================")

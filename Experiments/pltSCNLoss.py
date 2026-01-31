@@ -13,7 +13,6 @@ the SCN relabels samples when it is really certain about its prediction, which c
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.nn import init
 from tqdm import tqdm
@@ -27,18 +26,19 @@ from Data.clsOurDatasetSCN import OurDatasetSCN
 from ModelArchitectures.clsSCNWrapperOfVGG13 import SCN_VGG_Wrapper
 
 # --- EXPERIMENT CONSTANTS ---
-EPOCHS = 55
-BATCH_SIZE = 32
+EPOCHS = 30
+BATCH_SIZE = 64
 USE_SCHEDULER = True
-RELABEL_EPOCH = 25
+RELABEL_EPOCH = 10
 
 # --- DEBUG CONSTANTS ---
 RELABELING_ENABLED = True  # Set to True to enable relabeling
 PAPER_RELABELING = True  # Set to True to use the relabeling logic as described in the paper
 DEBUG_BATCH_PLOT = True  # Set to True to enable batch plotting
-PLOT_EPOCHS = [1, 10, 25, 40, 55]  # Epochs to plot (1-indexed)
+PLOT_EPOCHS = [1, 10, 25, 30]  # Epochs to plot (1-indexed)
 NUM_BATCHES_TO_PLOT = 1  # Number of batches to plot per epoch
 PRINT_WHEN_RELABELD = True # Print info when a sample is relabeled
+PRINT_GROUP_MEANS = True # Print mean attention weights for high and low importance groups once per epoch
 
 # Class mappings
 EMOTION_DICT = {0: "Angry", 1: "Disgust", 2: "Fear", 3: "Happy", 4: "Sad", 5: "Surprise"}
@@ -50,22 +50,24 @@ CLASS_WEIGHTS_TENSOR = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
 # --- CONFIGURATIONS ---
 # 1. Hyperparameter Configs
 HYPERPARAM_CONFIGS = {
-     "Tuned": {
-        "BETA": 0.83,
-        "MARGIN_1": 0.14,
-        "MARGIN_2": 0.6,
-    },
+    # "Tuned": {
+    #    "BETA": 0.7,
+    #    "MARGIN_1": 0.3,
+    #    "MARGIN_2": 0.25,
+    #    "GAMMA": 0.5
+    #},
      "Original": {
         "BETA": 0.7,
         "MARGIN_1": 0.15,
         "MARGIN_2": 0.2,
+        "GAMMA": 0.5
     }
 }
 
-# 2. Loss Configs
+# 2. Loss Configs (Loss_name, use_weighted, path_pretrained_model)
 LOSS_CONFIGS = [
-    ("Unweighted CE", False),
-    ("Weighted CE", True)
+    ("Unweighted CE", False, "Experiments/Models/VGG13_Original_Unweighted_CE_Acc_72.20.pth"),
+    ("Weighted CE", True, "Experiments/Models/VGG13_Original_Unweighted_CE_Acc_72.20.pth")
 ]
 
 # --- HELPER FUNCTIONS ---
@@ -78,6 +80,31 @@ def weights_init(m):
     elif isinstance(m, nn.Linear):
         init.normal_(m.weight, 0, 0.01)
         init.constant_(m.bias, 0)
+
+def plot_attention_weights_vs_loss(all_attention_weights, y_true, y_logits, experiment_title):
+
+    # Convert to numpy
+    if isinstance(all_attention_weights, torch.Tensor):
+        att_weights_np = all_attention_weights.numpy()
+    else:
+        att_weights_np = np.array(all_attention_weights)
+
+    ce = nn.CrossEntropyLoss(reduction='none')
+    loss_per_sample = ce(torch.tensor(y_logits, dtype=torch.float32), torch.tensor(y_true, dtype=torch.long)).numpy()
+    
+    plt.figure(figsize=(8, 6))
+    plt.scatter(att_weights_np, loss_per_sample, alpha=0.6)
+    plt.title(f"Attention Weight vs CE-loss - {experiment_title}", fontsize=14, fontweight='bold')
+    plt.xlabel("Attention Weight (α)", fontsize=12)
+    plt.ylabel("CE-loss", fontsize=12)
+    plt.grid(axis='y', alpha=0.75)
+    
+    filename = os.path.join("Experiments/Plots", f"Attention_Weights_{experiment_title.replace(' ', '_')}.png")
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Attention weight distribution plot saved: {filename}")
+
 
 def plot_relabeling_comparison(dataset, relabeled_mask, config_name, save_dir="Experiments/Plots"):
     """
@@ -125,7 +152,7 @@ def plot_relabeling_comparison(dataset, relabeled_mask, config_name, save_dir="E
         sample = dataset[idx]
         img = sample['image']
         current_label = sample['label']
-        original_label = dataset.original_label[idx]
+        original_label = sample['original_label']
         
         # Convert tensor to numpy for display
         if isinstance(img, torch.Tensor):
@@ -167,7 +194,7 @@ def plot_relabeling_comparison(dataset, relabeled_mask, config_name, save_dir="E
         # Get the sample
         sample = dataset[idx]
         img = sample['image']
-        original_label = dataset.original_label[idx]
+        original_label = sample['label']
         
         # Convert tensor to numpy for display
         if isinstance(img, torch.Tensor):
@@ -374,19 +401,22 @@ def plot_batch_debug(imgs, labels, attention_weights, outputs, epoch, batch_idx,
 
 def get_all_predictions_torch(model, loader, device):
     model.eval()
-    all_preds = []
-    all_labels = []
+    all_preds = torch.tensor([], dtype=torch.long)
+    all_labels = torch.tensor([], dtype=torch.long)
+    all_attention_weights = torch.tensor([])
+    all_raw_logits = torch.tensor([])
     with torch.no_grad():
         for batch in loader:
             inputs = batch['image'].to(device)
             labels = batch['label'].to(device)
-            outputs = model(inputs)
+            attention_weights, raw_logits, logits = model(inputs)
             # SCN Wrapper returns (alpha, logits), we need logits [1]
-            _, preds = torch.max(outputs[1], 1)
-            all_preds.append(preds.cpu())
-            all_labels.append(labels.cpu())
-    return torch.cat(all_labels), torch.cat(all_preds)
-
+            _, preds = torch.max(logits, 1)
+            all_preds = torch.cat((all_preds, preds.cpu()))
+            all_labels = torch.cat((all_labels, labels.cpu()))
+            all_attention_weights = torch.cat((all_attention_weights, attention_weights.cpu()))
+            all_raw_logits = torch.cat((all_raw_logits, raw_logits.cpu()))
+    return all_raw_logits, all_attention_weights, all_labels, all_preds
 
 def compute_confusion_matrix_torch(true_labels, pred_labels, num_classes=6):
     indices = true_labels * num_classes + pred_labels
@@ -428,7 +458,7 @@ def plot_history(history, title, filename, ylabel="Value"):
 
 # --- TRAINING PIPELINE ---
 
-def train_evaluate_pipeline(hp_config, use_weighted_loss, config_name=""):
+def train_evaluate_pipeline(hp_config, use_weighted_loss, path_pretrained_model, config_name=""):
     """
     Runs a full training session for one specific configuration.
     Returns loss_history, accuracy_history, and final predictions.
@@ -437,6 +467,7 @@ def train_evaluate_pipeline(hp_config, use_weighted_loss, config_name=""):
     BETA = hp_config["BETA"]
     MARGIN_1 = hp_config["MARGIN_1"]
     MARGIN_2 = hp_config["MARGIN_2"]
+    GAMMA = hp_config.get("GAMMA")
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -446,12 +477,13 @@ def train_evaluate_pipeline(hp_config, use_weighted_loss, config_name=""):
     
     # 3. Initialize Model & Weights
     base_model = CustomVGG13Reduced()
+    base_model.load_state_dict(torch.load(path_pretrained_model, map_location='cpu'))
     model = SCN_VGG_Wrapper(base_model)
-    model.apply(weights_init)
     model.to(device)
     
     # 4. Initialize Optimizer (Fixed SGD)
-    optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
+    # optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
     
     scheduler = None
     if USE_SCHEDULER:
@@ -473,6 +505,7 @@ def train_evaluate_pipeline(hp_config, use_weighted_loss, config_name=""):
         running_loss = 0.0
         train_loop = tqdm(trainDataLoader, desc=f"Ep {epoch+1}/{EPOCHS}", leave=False)
         relabels_this_epoch = 0
+        groups_printed_this_epoch = 0
         
         # Track how many batches we've plotted this epoch
         batches_plotted_this_epoch = 0
@@ -484,8 +517,8 @@ def train_evaluate_pipeline(hp_config, use_weighted_loss, config_name=""):
             
             optimizer.zero_grad()
             
-            # Forward pass: returns (attention_weights, logits)
-            attention_weights, outputs = model(imgs)
+            # Forward pass: returns (attention_weights, raw_logits, outputs)
+            attention_weights, raw_logits, outputs = model(imgs)
             batch_sz = imgs.size(0)
             
             # --- SCN RANK REGULARIZATION ---
@@ -504,6 +537,10 @@ def train_evaluate_pipeline(hp_config, use_weighted_loss, config_name=""):
             diff = low_mean - high_mean + MARGIN_1
             if diff > 0:
                 RR_loss = diff
+
+            if PRINT_GROUP_MEANS and groups_printed_this_epoch == 0:
+                print(f"   [Epoch {epoch+1}] High group mean α: {high_mean.item():.4f}, Low group mean α: {low_mean.item():.4f}, Difference + MARGIN_1: {diff.item():.4f}")
+                groups_printed_this_epoch += 1
             
             # --- DEBUG: Batch Plotting ---
             if DEBUG_BATCH_PLOT and (epoch + 1) in PLOT_EPOCHS and batches_plotted_this_epoch < NUM_BATCHES_TO_PLOT:
@@ -561,13 +598,13 @@ def train_evaluate_pipeline(hp_config, use_weighted_loss, config_name=""):
 
             
             # Total Loss
-            loss = criterion(outputs, targets) + RR_loss
+            loss = (1 - GAMMA) * criterion(outputs, targets) +  GAMMA * RR_loss
             
             loss.backward()
             optimizer.step()
             
             running_loss += loss.item()
-            train_loop.set_postfix(loss=f"{loss.item():.4f}", rr_loss=f"{RR_loss:.4f}")
+            train_loop.set_postfix(loss=f"{loss.item():.4f}", rr_loss=f"{RR_loss * GAMMA:.4f}")
 
             
         if PRINT_WHEN_RELABELD and epoch >= RELABEL_EPOCH:
@@ -580,18 +617,19 @@ def train_evaluate_pipeline(hp_config, use_weighted_loss, config_name=""):
         loss_history.append(running_loss / len(trainDataLoader))
         
         # Validation Loop for Accuracy History
-        y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
+        all_raw_logits, all_attention_weights, y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
         correct = torch.sum(y_true == y_pred).item()
         total = y_true.size(0)
         epoch_acc = correct / total * 100
         acc_history.append(epoch_acc)
         
         print(f"   [Epoch {epoch+1} Test Acc: {epoch_acc:.2f}%]")
+        print(f"  [Epoch {epoch+1}] Training Loss: {loss_history[-1]:.4f}")
 
     # Get final predictions for Confusion Matrix
-    y_true_final, y_pred_final = get_all_predictions_torch(model, valDataLoader, device)
+    all_raw_logits, all_attention_weights, y_true_final, y_pred_final = get_all_predictions_torch(model, valDataLoader, device)
     
-    return loss_history, acc_history, y_true_final, y_pred_final, trainDataLoader
+    return loss_history, acc_history, y_true_final, y_pred_final, all_attention_weights, all_raw_logits, trainDataLoader
 
 
 # --- MAIN EXPERIMENT LOOP ---
@@ -609,7 +647,7 @@ def run_experiments():
     for config_name, config_params in HYPERPARAM_CONFIGS.items():
         
         # Loop over Loss types (Weighted vs Unweighted)
-        for loss_name, use_weighted in LOSS_CONFIGS:
+        for loss_name, use_weighted, path_pretrained_model in LOSS_CONFIGS:
             
             # Construct the combined title part
             experiment_title = f"{config_name} {loss_name}"
@@ -619,9 +657,10 @@ def run_experiments():
             print(f"==============================================")
             
             # Run Pipeline (pass config_name for debug plots)
-            loss_hist, acc_hist, y_true, y_pred, trainDataLoader = train_evaluate_pipeline(
+            loss_hist, acc_hist, y_true, y_pred, all_attention_weights, all_raw_logits, trainDataLoader = train_evaluate_pipeline(
                 config_params, 
                 use_weighted,
+                path_pretrained_model,
                 config_name=f"{config_name}_{loss_name.replace(' ', '')}"
             )
             
@@ -664,6 +703,9 @@ def run_experiments():
                 print("Not enough relabeled samples to create comparison plot.")
             
             print(f"Completed {experiment_title}. Plots saved.")
+
+            # 5. Plot Attention Weight vs CE-loss without attention
+            plot_attention_weights_vs_loss(all_attention_weights, y_true, all_raw_logits, experiment_title)
 
 
 if __name__ == "__main__":

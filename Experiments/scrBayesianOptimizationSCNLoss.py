@@ -18,10 +18,10 @@ from Data.clsOurDatasetSCN import OurDatasetSCN
 from ModelArchitectures.clsSCNWrapperOfVGG13 import SCN_VGG_Wrapper
 
 # --- CONSTANTS ---
-EPOCHS = 45
-BATCH_SIZE = 32
+EPOCHS = 30
+BATCH_SIZE = 128
 LOG_FILE = "Experiments/Plots/scn_optimization_history.txt"
-RELABEL_EPOCH = 25
+RELABEL_EPOCH = 15
 
 # --- DEBUG CONSTANTS ---
 RELABELING_ENABLED = True # Set to True to enable relabeling
@@ -29,6 +29,7 @@ PAPER_RELABELING = True  # Set to True to use the relabeling logic as described 
 
 CLASS_WEIGHTS = torch.tensor([1.00, 1.00, 1.00, 1.00, 1.00, 1.00])
 # CLASS_WEIGHTS = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
+PRETRAINED_WEIGHTS_PATH = "Experiments/Models/VGG13_Original_Unweighted_CE_Acc_72.20.pth"
 
 
 # Weight Intit for SGD, this stops gradient explosion or vanishing gradient
@@ -54,9 +55,9 @@ def evaluate_model(model, loader, device, criterion):
             inputs = batch['image'].to(device)
             labels = batch['label'].to(device)
             
-            # SCN Wrapper returns (alpha, logits). We only need logits [1] for evaluation
+            # SCN Wrapper returns (alpha, raw_logits, logits). We only need logits [2] for evaluation
             outputs = model(inputs)
-            logits = outputs[1]
+            logits = outputs[2]
             
             # Loss
             loss = criterion(logits, labels)
@@ -74,9 +75,10 @@ def evaluate_model(model, loader, device, criterion):
 def objective(trial):
     # --- 1. HYPERPARAMETER SEARCH SPACE ---
     # Optuna will suggest values from these ranges using TPE (Bayesian optimization)
-    BETA = trial.suggest_float("beta", 0.5, 0.85, step=0.01)
-    MARGIN_1 = trial.suggest_float("margin_1", 0.05, 0.5, step=0.01) 
-    MARGIN_2 = trial.suggest_float("margin_2", 0.05, 0.6, step=0.01)
+    BETA = trial.suggest_float("beta", 0.2, 0.9, step=0.01)
+    MARGIN_1 = trial.suggest_float("margin_1", 0.1, 0.8, step=0.01) 
+    MARGIN_2 = trial.suggest_float("margin_2", 0.1, 0.8, step=0.01)
+    GAMMA = trial.suggest_float("gamma", 0.1, 0.9, step=0.05)
     
     # --- 2. SETUP (Fresh for every trial) ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -91,11 +93,13 @@ def objective(trial):
     val_loader = DataLoader(OurDatasetSCN(split='test'), batch_size=BATCH_SIZE, shuffle=False)
     # Init Model
     base_model = CustomVGG13Reduced()
-    model = SCN_VGG_Wrapper(base_model).to(device)
-    model.apply(weights_init)
+    base_model.load_state_dict(torch.load(PRETRAINED_WEIGHTS_PATH, map_location='cpu'))
+    model = SCN_VGG_Wrapper(base_model)
+    model.to(device)
     
     # Init Optimizer 
-    optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
+    # optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
     criterion = nn.CrossEntropyLoss(weight=CLASS_WEIGHTS.to(device))
 
@@ -116,7 +120,7 @@ def objective(trial):
             optimizer.zero_grad()
             
             # Forward: (alpha, logits)
-            attention_weights, outputs = model(imgs)
+            attention_weights, raw_logits, outputs = model(imgs)
             batch_sz = imgs.size(0)
             
             # --- SCN RANK REGULARIZATION ---
@@ -174,7 +178,7 @@ def objective(trial):
                 
 
             # --- LOSS CALCULATION ---
-            loss = criterion(outputs, targets) + RR_loss
+            loss = (1 - GAMMA) * criterion(outputs, targets) + GAMMA * RR_loss
             loss.backward()
             optimizer.step()
 
