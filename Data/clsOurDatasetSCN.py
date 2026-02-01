@@ -2,6 +2,7 @@
 This file defines the SCNOurDataset class. It is a modified version of the OurDataset class, also returning the 
 index of each sample in the dataset, which is needed for relabeling during training.
 """
+from torchvision.transforms import v2
 import numpy as np
 from datasets import load_dataset, concatenate_datasets, ClassLabel
 from PIL import Image
@@ -59,9 +60,14 @@ class OurDatasetSCN(Dataset):
         split = 'train', 'test' or 'all'
         """
 
-        self.transform = transforms.Compose([ 
-            transforms.ToTensor(),   
-            transforms.Normalize(mean=[0.5], std=[0.5])
+        self.tensor = transforms.ToTensor()
+        self.normalize = transforms.Normalize(mean=[0.5], std=[0.5])
+
+        self.split = split
+
+        self.TrainTransform = v2.Compose([
+            v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+            v2.RandomHorizontalFlip(p=0.5),            
         ])
 
         if(dataset == 'all'):
@@ -104,6 +110,7 @@ class OurDatasetSCN(Dataset):
             
             self.image = np.array(shuffled_ds['image'])
             self.label = np.array(shuffled_ds['label'])
+            self.original_label = np.array(shuffled_ds['label'])
         
         elif(dataset == 'affectnet'):
 
@@ -131,6 +138,7 @@ class OurDatasetSCN(Dataset):
             
             self.image = np.array(shuffled_ds['image'])
             self.label = np.array(shuffled_ds['label'])
+            self.original_label = np.array(shuffled_ds['label'])
 
         elif(dataset == 'fer2013'):
 
@@ -158,19 +166,25 @@ class OurDatasetSCN(Dataset):
             
             self.image = np.array(shuffled_ds['image'])
             self.label = np.array(shuffled_ds['label'])
+            self.original_label = np.array(shuffled_ds['label'])
         else: 
             raise ValueError("Dataset must be 'all', 'affectnet' or 'fer2013'.")
             
 
     def __getitem__(self, idx):
 
-        image = self.image[idx]
+        img = self.image[idx]
         label = self.label[idx]
         
-        # Convert PIL image to tensor [C, H, W] with values in [-1, 1]
-        img_tensor = self.transform(image)
+        img_tensor = self.tensor(img)
+   
+        if self.split == 'train':
+            img_tensor = self.TrainTransform(img_tensor)
+
         
-        return {"image" : img_tensor, "label" : label, 'index': idx}
+        img_tensor = self.normalize(img_tensor)
+        
+        return {"image" : img_tensor, "label" : label, 'index': idx, 'original_label': self.original_label[idx]}
     
     def __len__(self):
  

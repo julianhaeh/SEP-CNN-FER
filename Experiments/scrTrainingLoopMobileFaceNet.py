@@ -12,7 +12,7 @@ from Data.clsOurDataset import OurDataset
 NUM_CLASSES = 6  # Angry, Disgust, Fear, Happy, Sad, Surprise
 
 def train_emotion_mobilefacenet(
-    epochs=55,
+    epochs=45,
     batch_size=32,
     lr=0.014,
     num_workers=8,
@@ -38,8 +38,9 @@ def train_emotion_mobilefacenet(
     model = MobileFacenet().to(device) 
     head = nn.Linear(128, NUM_CLASSES).to(device)
 
+    class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06], device=device)
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
 
     optimizer = torch.optim.SGD(
         list(model.parameters()) + list(head.parameters()),

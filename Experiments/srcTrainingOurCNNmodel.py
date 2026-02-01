@@ -10,7 +10,7 @@ NUM_CLASSES = 6  # Angry, Disgust, Fear, Happy, Sad, Surprise
 
 
 def train_emotion_ourcnn(
-    epochs=55,
+    epochs=45,
     batch_size=32,
     lr=3e-4,
     num_workers=8,
@@ -52,7 +52,9 @@ def train_emotion_ourcnn(
 
     head = nn.Linear(128, NUM_CLASSES).to(device)
 
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
+    class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
+
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
 
     optimizer = torch.optim.SGD(
         list(model.parameters()) + list(head.parameters()),

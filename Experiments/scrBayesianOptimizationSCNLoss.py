@@ -14,17 +14,22 @@ import optuna
 # --- USER IMPORTS ---
 # Assuming these are available in your directory structure
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
-from Data.clsOurDatasetTuning import OurDatasetTuning
+from Data.clsOurDatasetSCN import OurDatasetSCN
 from ModelArchitectures.clsSCNWrapperOfVGG13 import SCN_VGG_Wrapper
 
 # --- CONSTANTS ---
-EPOCHS = 55
-BATCH_SIZE = 32
+EPOCHS = 30
+BATCH_SIZE = 128
 LOG_FILE = "Experiments/Plots/scn_optimization_history.txt"
-RELABELING = True
+RELABEL_EPOCH = 15
+
+# --- DEBUG CONSTANTS ---
+RELABELING_ENABLED = True # Set to True to enable relabeling
+PAPER_RELABELING = True  # Set to True to use the relabeling logic as described in the paper. This will only relabel low-importance samples, in the orignal repo its both.
 
 CLASS_WEIGHTS = torch.tensor([1.00, 1.00, 1.00, 1.00, 1.00, 1.00])
 # CLASS_WEIGHTS = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
+PRETRAINED_WEIGHTS_PATH = "Experiments/Models/VGG13_Original_Unweighted_CE_Acc_72.20.pth"
 
 
 # Weight Intit for SGD, this stops gradient explosion or vanishing gradient
@@ -50,9 +55,9 @@ def evaluate_model(model, loader, device, criterion):
             inputs = batch['image'].to(device)
             labels = batch['label'].to(device)
             
-            # SCN Wrapper returns (alpha, logits). We only need logits [1] for evaluation
+            # SCN Wrapper returns (alpha, raw_logits, logits). We only need logits [2] for evaluation
             outputs = model(inputs)
-            logits = outputs[1]
+            logits = outputs[2]
             
             # Loss
             loss = criterion(logits, labels)
@@ -70,11 +75,10 @@ def evaluate_model(model, loader, device, criterion):
 def objective(trial):
     # --- 1. HYPERPARAMETER SEARCH SPACE ---
     # Optuna will suggest values from these ranges using TPE (Bayesian optimization)
-    beta = trial.suggest_float("beta", 0.4, 0.95, step=0.01)
-    margin_1 = trial.suggest_float("margin_1", 0.02, 0.5, step=0.01) 
-    margin_2 = trial.suggest_float("margin_2", 0.05, 0.5, step=0.01)
-    relabel_epochs = trial.suggest_int("relabel_epochs", 5, 54)
-    # relabeling = trial.suggest_categorical("relabeling", [True, False])
+    BETA = trial.suggest_float("beta", 0.2, 0.9, step=0.01)
+    MARGIN_1 = trial.suggest_float("margin_1", 0.1, 0.8, step=0.01) 
+    MARGIN_2 = trial.suggest_float("margin_2", 0.1, 0.8, step=0.01)
+    GAMMA = trial.suggest_float("gamma", 0.1, 0.9, step=0.05)
     
     # --- 2. SETUP (Fresh for every trial) ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -82,18 +86,20 @@ def objective(trial):
     # IMPORTANT: We MUST re-initialize the dataset/loader every trial.
     # The SCN logic modifies labels in-place: trainDataLoader.dataset.data[idx]['label'] = ...
     # If we reuse the loader, Trial 2 starts with Trial 1's modified labels.
-    train_dataset = OurDatasetTuning(split='train')
+    train_dataset = OurDatasetSCN(split='train')
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
     
     # Validation loader can be reused (read-only), but defining here for safety
-    val_loader = DataLoader(OurDatasetTuning(split='valid'), batch_size=BATCH_SIZE, shuffle=False)
+    val_loader = DataLoader(OurDatasetSCN(split='test'), batch_size=BATCH_SIZE, shuffle=False)
     # Init Model
     base_model = CustomVGG13Reduced()
-    model = SCN_VGG_Wrapper(base_model).to(device)
-    model.apply(weights_init)
+    base_model.load_state_dict(torch.load(PRETRAINED_WEIGHTS_PATH, map_location='cpu'))
+    model = SCN_VGG_Wrapper(base_model)
+    model.to(device)
     
     # Init Optimizer 
-    optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
+    # optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
     criterion = nn.CrossEntropyLoss(weight=CLASS_WEIGHTS.to(device))
 
@@ -114,13 +120,13 @@ def objective(trial):
             optimizer.zero_grad()
             
             # Forward: (alpha, logits)
-            attention_weights, outputs = model(imgs)
+            attention_weights, raw_logits, outputs = model(imgs)
             batch_sz = imgs.size(0)
             
             # --- SCN RANK REGULARIZATION ---
             RR_loss = 0.0
             
-            tops = int(batch_sz * beta)
+            tops = int(batch_sz * BETA)
             _, top_idx = torch.topk(attention_weights.squeeze(), tops)
             _, down_idx = torch.topk(attention_weights.squeeze(), batch_sz - tops, largest=False)
             
@@ -130,29 +136,49 @@ def objective(trial):
             high_mean = torch.mean(high_group)
             low_mean = torch.mean(low_group)
             
-            diff = low_mean - high_mean + margin_1
+            diff = low_mean - high_mean + MARGIN_1
             if diff > 0:
                 RR_loss = diff
             
             # --- RELABELING LOGIC ---
-            if epoch >= relabel_epochs:
-                with torch.no_grad():
-                    sm = torch.softmax(outputs, dim=1)
-                    Pmax, predicted_labels = torch.max(sm, 1)
-                    Pgt = torch.gather(sm, 1, targets.view(-1, 1)).squeeze()
-                    
-                    true_or_false = Pmax - Pgt > margin_2
-                    
-                    true_or_false = true_or_false
-                    update_idx = true_or_false.nonzero().reshape(-1)
-                    
-                    label_idx = indexes[update_idx] # get samples' index in train_loader
-                    relabels = predicted_labels[update_idx] # predictions where (Pmax - Pgt > margin_2)
-                    train_loader.dataset.label[label_idx.cpu().numpy()] = relabels.cpu().numpy() # relabel samples in train_loader
+            if epoch >= RELABEL_EPOCH:
+                if RELABELING_ENABLED and epoch >= RELABEL_EPOCH:
+                    with torch.no_grad():
+                        if not PAPER_RELABELING:
+                            sm = torch.softmax(outputs, dim=1)
+                            Pmax, predicted_labels = torch.max(sm, 1)
+                            Pgt = torch.gather(sm, 1, targets.view(-1, 1)).squeeze()
+                            
+                            # Relabeling condition
+                            true_or_false = Pmax - Pgt > MARGIN_2
+                            update_idx = true_or_false.nonzero().reshape(-1)
+                            
+                            label_idx = indexes[update_idx] 
+                            relabels = predicted_labels[update_idx]
+                            
+                            # Update dataset labels in place
+                            train_loader.dataset.label[label_idx.cpu().numpy()] = relabels.cpu().numpy()
+                        else:
+                            sm = torch.softmax(outputs, dim=1)
+                            Pmax, predicted_labels = torch.max(sm, 1)
+                            Pgt = torch.gather(sm, 1, targets.view(-1, 1)).squeeze()
+
+                            low_importance_mask = torch.zeros(batch_sz, dtype=torch.bool, device=device)
+                            low_importance_mask[down_idx] = True
+                            
+                            # Relabeling condition
+                            true_or_false = (Pmax - Pgt > MARGIN_2) & low_importance_mask
+                            update_idx = true_or_false.nonzero().reshape(-1)
+                            
+                            label_idx = indexes[update_idx] 
+                            relabels = predicted_labels[update_idx]
+                            
+                            # Update dataset labels in place
+                            train_loader.dataset.label[label_idx.cpu().numpy()] = relabels.cpu().numpy()
                 
 
             # --- LOSS CALCULATION ---
-            loss = criterion(outputs, targets) + RR_loss
+            loss = (1 - GAMMA) * criterion(outputs, targets) + GAMMA * RR_loss
             loss.backward()
             optimizer.step()
 
@@ -173,7 +199,7 @@ def objective(trial):
     # --- 5. LOGGING ---
     with open(LOG_FILE, "a") as f:
         f.write(f"Trial {trial.number}: Loss={final_test_loss:.4f}, Acc={final_accuracy:.2f}% | "
-                f"Beta={beta:.4f}, M1={margin_1:.4f}, M2={margin_2:.4f}, RelabelEp={relabel_epochs}\n")
+                f"Beta={BETA:.4f}, M1={MARGIN_1:.4f}, M2={MARGIN_2:.4f}\n")
     
     return final_test_loss
 
