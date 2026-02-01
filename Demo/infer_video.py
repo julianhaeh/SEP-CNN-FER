@@ -1,4 +1,3 @@
-# Demo/infer_video.py
 import argparse
 import cv2
 import numpy as np
@@ -347,7 +346,7 @@ def main():
                 vis,
                 main_text,
                 x + w,             # right edge of box
-                max(20, y - 6),    # slightly above top edge
+                max(20, y - 6),   
                 anchor="tl",
                 scale=0.85,
                 thickness=2,
