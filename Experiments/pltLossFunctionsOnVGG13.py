@@ -20,7 +20,7 @@ from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Data.clsOurDatasetTuning import OurDatasetTuning
 
 # --- PARAMETERS ---
-EPOCHS = 45
+EPOCHS = 55
 BATCH_SIZE = 32
 
 # Load Datasets
@@ -44,8 +44,8 @@ loss_configs = [
 ]
 
 optimizer_configs = [
-    ("Adam", optim.Adam, {"lr": 0.0001}),
-    ("AdamW", optim.AdamW, {"lr": 0.0001, "weight_decay": 1e-4}),
+    # ("Adam", optim.Adam, {"lr": 0.0001}),
+    # ("AdamW", optim.AdamW, {"lr": 0.0001, "weight_decay": 1e-4}),
     ("SGD", optim.SGD, {"lr": 0.014, "momentum": 0.9, "weight_decay": 2.2e-4})
 ]
 

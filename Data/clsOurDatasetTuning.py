@@ -233,7 +233,7 @@ class OurDatasetTuning(Dataset):
 
         img_tensor = self.normalize(img_tensor)
         
-        return {"image" : img_tensor, "label" : label, "index": idx}
+        return {"image" : img_tensor, "label" : label}
     
     def __len__(self):
  
