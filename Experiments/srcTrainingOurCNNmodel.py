@@ -52,7 +52,7 @@ def train_emotion_ourcnn(
 
     head = nn.Linear(128, NUM_CLASSES).to(device)
 
-    class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
+    class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06], device=device)
 
     criterion = nn.CrossEntropyLoss(weight=class_weights)
 

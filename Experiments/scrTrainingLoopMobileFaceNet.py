@@ -18,7 +18,7 @@ def train_emotion_mobilefacenet(
     num_workers=8,
     save_path=f"mobilefacenet_{time.strftime('%Y%m%d_%H%M%S')}.pth",
     device=None,
-):
+    ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
     print(f"Start mit Batchsize: {batch_size}, Learning Rate: {lr}, Workers: {num_workers}")
@@ -38,7 +38,7 @@ def train_emotion_mobilefacenet(
     model = MobileFacenet().to(device) 
     head = nn.Linear(128, NUM_CLASSES).to(device)
 
-    class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
+    class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06], device=device)
 
     criterion = nn.CrossEntropyLoss(weight=class_weights)
 
