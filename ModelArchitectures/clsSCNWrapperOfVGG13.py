@@ -48,24 +48,15 @@ class SCN_VGG_Wrapper(nn.Module):
         )
 
         # SCN Module
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         alpha_in_dim = 256
         self.alpha = nn.Sequential(
-            nn.BatchNorm2d(alpha_in_dim),  
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(),
             nn.Linear(alpha_in_dim, 1),
             nn.Sigmoid()
         )
-
         
-        
-        # Initialize new layers
         self.classifier.apply(weights_init)
         self.alpha.apply(weights_init)
-
-        # Freeze backbone parameters
-        # for param in self.backbone.parameters():
-        #    param.requires_grad = False
 
     def forward(self, x):
         
@@ -74,7 +65,9 @@ class SCN_VGG_Wrapper(nn.Module):
 
 
         # Pass through attention module
-        attention_weights = self.alpha(x)
+        input_attention = self.avgpool(x) 
+        input_attention = input_attention.view(input_attention.size(0), -1)
+        attention_weights = self.alpha(input_attention)
         
         # Flatten x for classifier
         x = x.view(x.size(0), -1)

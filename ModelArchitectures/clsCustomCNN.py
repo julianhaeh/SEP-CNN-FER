@@ -26,8 +26,12 @@ class CustomCNN(nn.Module):
                 - 'p': padding (default 1)
             - Activation Layer: {'type': 'act'}
             - Pooling Layer: {'type': 'pool'}
+                - 'k': kernel size (default 2)
+                - 's': stride (default 2)
             - Dropout Layer: {'type': 'dropout', 'p': float}
                 - 'p': dropout probability
+            - Batch Normalization Layer: {'type': 'norm'}
+            - Global Average Pooling Layer: {'type': 'gap'}
 
         Possible inputs for `classifier_config`:
             - Fully Connected Layer: {'type': 'full', 'out': int}
@@ -35,6 +39,7 @@ class CustomCNN(nn.Module):
             - Activation Layer: {'type': 'act'}
             - Dropout Layer: {'type': 'dropout', 'p': float}
                 - 'p': dropout probability
+            - Batch Normalization Layer: {'type': 'norm'}
 
         There is no need to define the input dimension of the layers, as it is inferred from the previous layers and the hardcoded input shape.
         Note that the last layer of the classifier should have an output dimension of 6 for our 6 emotion classes.
@@ -75,22 +80,29 @@ class CustomCNN(nn.Module):
                     kernel_size=config.get('k', 3),
                     stride=config.get('s', 1),
                     padding=config.get('p', 1),
-                    bias=False # This can be set to True when not using any Batchnorm layers, but if see to True with Batchnorm the bias gets lost
                 ))
                 current_channels = config['out'] # Update for next layer
                 
             elif config['type'] == 'act':
-                self.features.add_module(f"act_{i}", nn.ReLU())
+                self.features.add_module(f"act_{i}", nn.ReLU(inplace=True))
                 
             elif config['type'] == 'pool':
-                self.features.add_module(f"pool_{i}", nn.MaxPool2d(2, 2))
+                    size = config.get('k', 2)
+                    stride = config.get('s', 2)
+                    self.features.add_module(f"pool_{i}", nn.MaxPool2d(size, stride))
 
             elif config['type'] == 'norm': 
                 self.features.add_module(
                     f"norm_{i}",
-                    nn.BatchNorm2d(config['out'])
+                    nn.BatchNorm2d(current_channels)
                 )
 
+            elif config['type'] == 'gap':
+                self.features.add_module(
+                    f"gap_{i}",
+                    nn.AdaptiveAvgPool2d((1, 1))
+                )
+            
             elif config['type'] == 'dropout':
                 self.features.add_module(f"drop_{i}", nn.Dropout2d(config['p']))
 
@@ -116,10 +128,16 @@ class CustomCNN(nn.Module):
                 current_in_features = config['out'] # Update for next layer
                 
             elif config['type'] == 'act':
-                self.classifier.add_module(f"act_fc_{i}", nn.ReLU())
+                self.classifier.add_module(f"act_fc_{i}", nn.ReLU(inplace=True))
                 
             elif config['type'] == 'dropout':
                  self.classifier.add_module(f"drop_{i}", nn.Dropout(config['p']))
+
+            elif config['type'] == 'norm':
+                self.classifier.add_module(
+                    f"norm_fc_{i}",
+                    nn.BatchNorm1d(current_in_features)
+                )
 
     def forward(self, x):
         features = self.features(x)

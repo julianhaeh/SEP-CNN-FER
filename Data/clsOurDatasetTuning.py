@@ -127,11 +127,15 @@ class OurDatasetTuning(Dataset):
 
                     self.label = np.array(shuffled_ds['test']['label'])
                     self.image = np.array(shuffled_ds['test']['image'])
-            elif split == 'test':
+            elif split == 'all':
 
 
                 self.label = np.array(shuffled_ds['label'])
                 self.image = np.array(shuffled_ds['image'])
+
+            elif split == 'test':
+
+                raise ValueError("Split must be 'train', 'valid' or 'all' for tuning data.")
         
         elif(dataset == 'affectnet'):
 
@@ -172,8 +176,7 @@ class OurDatasetTuning(Dataset):
 
             elif split == 'test':
 
-                self.label = np.array(shuffled_ds['label'])
-                self.image = np.array(shuffled_ds['image'])
+                raise ValueError("Split must be 'train', 'valid' or 'all' for tuning data.")
 
         elif(dataset == 'fer2013'):
 
@@ -211,8 +214,8 @@ class OurDatasetTuning(Dataset):
                     self.label = np.array(shuffled_ds['test']['label'])
                     self.image = np.array(shuffled_ds['test']['image'])
             elif split == 'test':
-                self.label = np.array(shuffled_ds['label'])
-                self.image = np.array(shuffled_ds['image'])
+
+                raise ValueError("Split must be 'train', 'valid' or 'all' for tuning data.")
         else: 
             raise ValueError("Dataset must be 'all', 'affectnet' or 'fer2013'.")
             

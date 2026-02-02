@@ -6,6 +6,8 @@ from datasets import load_from_disk
 import random
 from clsOurDataset import OurDataset
 from torch.utils.data import DataLoader
+from clsOurDatasetTuning import OurDatasetTuning
+from torchvision.transforms import v2
 import numpy as np
 
 label_map = {
@@ -17,20 +19,21 @@ label_map = {
     5: 'Surprise'
 }
 
+BATCH_SIZE = 16
 
-dataLoader = DataLoader(OurDataset(split='all', dataset='fer2013'), shuffle=True, batch_size=32)
+# dataLoader = DataLoader(OurDataset(split='all', dataset='fer2013'), shuffle=True, batch_size=32)
+dataLoader = DataLoader(OurDatasetTuning(split='all', dataset='all', custom_transform=v2.Identity()), shuffle=True, batch_size=BATCH_SIZE)
 batch = next(iter(dataLoader))
 images = batch['image']
 labels = batch['label']
     
 rows = 4
-cols = 8
-fig, axes = plt.subplots(rows, cols, figsize=(16, 9))
-fig.suptitle(f"Batchplot of the processed data", fontsize=16)
+cols = 4
+fig, axes = plt.subplots(rows, cols, figsize=(16, 4 * rows))
     
 axes = axes.flatten()
     
-for i in range(32):
+for i in range(BATCH_SIZE):
     image = images[i].numpy().squeeze()
     label_id = labels[i].item()
         

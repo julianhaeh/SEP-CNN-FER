@@ -12,9 +12,10 @@ import torch.nn.init as init
 # --- CUSTOM IMPORTS ---
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Data.clsOurDataset import OurDataset
+from ModelArchitectures.clsDownsizedCustomVGG13Reduced import DownsizedCustomVGG13Reduced
 
 # --- PARAMETERS ---
-EPOCHS = 55
+EPOCHS = 75
 BATCH_SIZE = 32
 
 # Load Datasets
@@ -29,9 +30,12 @@ CLASS_WEIGHTS = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
 
 # --- CONFIGURATIONS ---
 LOSS_CONFIGS = [
-    ("Unweighted_CE", False),
-    ("Weighted_CE", True)
+    ("Weighted_CE", True),
+    ("Unweighted_CE", False)
 ]
+
+USE_PRETRAINED = None # Set to None to train from scratch, otherwise will load weights from the path
+USE_ORIGINAL_VGG13 = False  # If True, uses the original CustomVGG13Reduced architecture, if false uses the downsized one
 
 # --- HELPER FUNCTIONS ---
 
@@ -174,12 +178,23 @@ def run_experiments():
         print(f"=========================================")
         
         # 1. INIT ARCHITECTURE
-        model = CustomVGG13Reduced()
-        model.apply(weights_init)   
+        if USE_ORIGINAL_VGG13:
+            model = CustomVGG13Reduced() 
+            model_name = "Original"
+        else:
+            model = DownsizedCustomVGG13Reduced()
+            model_name = "Downsized"
+        model.apply(weights_init) 
+
+        print(f"   [Model Initialized: {model_name}]")
+
+        if USE_PRETRAINED is not None:
+            model.load_state_dict(torch.load(USE_PRETRAINED, map_location=device))
+            print(f"   [Loaded Pretrained Weights from {USE_PRETRAINED}]") 
 
         # 2. INIT LOSS
         if use_weighted:
-            criterion = nn.CrossEntropyLoss(weight=CLASS_WEIGHTS)
+            criterion = nn.CrossEntropyLoss(weight=CLASS_WEIGHTS.to(device))
         else:
             criterion = nn.CrossEntropyLoss()
 
@@ -206,17 +221,17 @@ def run_experiments():
                               f"Confusion Matrix: {loss_name}", 
                               cm_filename)
         
-        torch.save(model.state_dict(), f"Experiments/Models/VGG13_{loss_name}_Acc_{final_acc:.2f}_Model.pth")
+        torch.save(model.state_dict(), f"Experiments/Models/CustomVGG13_{model_name}_Acc_{final_acc:.2f}_Model.pth")
 
     # --- Generate combined comparison plots ---
     print(f"\n=========================================")
     print(f" Generating Comparison Plots...")
     print(f"=========================================")
     
-    loss_plot_path = "Experiments/Plots/VGG13_Comparison_Loss.png"
+    loss_plot_path = f"Experiments/Plots/VGG13_{model_name}_Comparison_Loss.png"
     plot_metric_comparison(combined_loss_history, "Training Loss", loss_plot_path)
 
-    acc_plot_path = "Experiments/Plots/VGG13_ Comparison_Accuracy.png"
+    acc_plot_path = f"Experiments/Plots/VGG13_{model_name}_Comparison_Accuracy.png"
     plot_metric_comparison(combined_accuracy_history, "Test Accuracy", acc_plot_path)
     
     print("\nExperiments completed.")

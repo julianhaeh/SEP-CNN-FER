@@ -19,7 +19,7 @@ from ModelArchitectures.clsSCNWrapperOfVGG13 import SCN_VGG_Wrapper
 
 # --- CONSTANTS ---
 EPOCHS = 30
-BATCH_SIZE = 128
+BATCH_SIZE = 64
 LOG_FILE = "Experiments/Plots/scn_optimization_history.txt"
 RELABEL_EPOCH = 15
 
@@ -75,10 +75,10 @@ def evaluate_model(model, loader, device, criterion):
 def objective(trial):
     # --- 1. HYPERPARAMETER SEARCH SPACE ---
     # Optuna will suggest values from these ranges using TPE (Bayesian optimization)
-    BETA = trial.suggest_float("beta", 0.2, 0.9, step=0.01)
-    MARGIN_1 = trial.suggest_float("margin_1", 0.1, 0.8, step=0.01) 
-    MARGIN_2 = trial.suggest_float("margin_2", 0.1, 0.8, step=0.01)
-    GAMMA = trial.suggest_float("gamma", 0.1, 0.9, step=0.05)
+    BETA = trial.suggest_float("beta", 0.2, 0.9, step=0.02)
+    MARGIN_1 = trial.suggest_float("margin_1", 0.1, 0.8, step=0.02) 
+    MARGIN_2 = trial.suggest_float("margin_2", 0.1, 0.8, step=0.02)
+    GAMMA = trial.suggest_float("gamma", 0.1, 0.9, step=0.02)
     
     # --- 2. SETUP (Fresh for every trial) ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -101,7 +101,7 @@ def objective(trial):
     # optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
     optimizer = optim.Adam(model.parameters(), lr=0.0001)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
-    criterion = nn.CrossEntropyLoss(weight=CLASS_WEIGHTS.to(device))
+    criterion = nn.CrossEntropyLoss()
 
     # --- 3. TRAINING LOOP ---
     for epoch in range(EPOCHS):
@@ -199,9 +199,9 @@ def objective(trial):
     # --- 5. LOGGING ---
     with open(LOG_FILE, "a") as f:
         f.write(f"Trial {trial.number}: Loss={final_test_loss:.4f}, Acc={final_accuracy:.2f}% | "
-                f"Beta={BETA:.4f}, M1={MARGIN_1:.4f}, M2={MARGIN_2:.4f}\n")
+                f"Beta={BETA:.4f}, M1={MARGIN_1:.4f}, M2={MARGIN_2:.4f}, Gamma={GAMMA:.4f}\n")
     
-    return final_test_loss
+    return final_accuracy
 
 if __name__ == "__main__":
     # Create the log file with header if it doesn't exist
@@ -212,9 +212,7 @@ if __name__ == "__main__":
 
     print("Starting Bayesian Optimization with Optuna...")
     
-    # Create a study object and optimize the objective function.
-    # direction="minimize" because we want the lowest Test Loss.
-    study = optuna.create_study(direction="minimize")
+    study = optuna.create_study(direction="maximize")
     
     # n_trials=20 (You can increase this if you have time)
     study.optimize(objective, n_trials=60)

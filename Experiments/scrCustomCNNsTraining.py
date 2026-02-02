@@ -9,7 +9,6 @@ import numpy as np
 import os
 import itertools
 
-from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from ModelArchitectures.clsCustomCNN import CustomCNN 
 from Data.clsOurDataset import OurDataset
 
@@ -19,6 +18,10 @@ BATCH_SIZE = 32
 USE_SCHEDULER = True
 
 # --- DEBUG CONSTANTS ---
+SAVE_MODELS = False
+LOG_FILE = "Experiments/Plots/custom_cnn_training_history.txt"
+
+
 
 # Class mappings
 EMOTION_DICT = {0: "Angry", 1: "Disgust", 2: "Fear", 3: "Happy", 4: "Sad", 5: "Surprise"}
@@ -32,8 +35,10 @@ CLASS_WEIGHTS_TENSOR = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
 original_feature_config = [
                                 # --- Block 1 ---
                                 {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 
                                 {'type': 'pool'},  
@@ -41,8 +46,10 @@ original_feature_config = [
 
                                 # --- Block 2 ---
                                 {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 
                                 {'type': 'pool'},
@@ -50,10 +57,13 @@ original_feature_config = [
 
                                 # --- Block 3 ---
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 
                                 {'type': 'pool'},
@@ -61,10 +71,13 @@ original_feature_config = [
 
                                 # --- Block 4 ---
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
 
                                 {'type': 'pool'},
@@ -74,10 +87,12 @@ original_feature_config = [
 original_classifier_config = [
                                 
                                 {'type': 'full', 'out': 1024},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'dropout', 'p': 0.5},
                                 
                                 {'type': 'full', 'out': 1024},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'dropout', 'p': 0.5},
                                 
@@ -85,17 +100,20 @@ original_classifier_config = [
                             ]
 
 MODEL_CONFIGS = {
-    "VGG13_Original": {
+
+    "VGG13_Original" : {
             "feature_config": original_feature_config,
-            "classifier_config": original_classifier_config    
+            "classifier_config": original_classifier_config
     },
 
-    "VGG13_ExtraLayer" : {
+    "VGG13_ExtraBlockInFeatureLayer_A" : {
             "feature_config": [
                                 # --- Block 1 ---
                                 {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 
                                 {'type': 'pool'},  
@@ -103,8 +121,9 @@ MODEL_CONFIGS = {
 
                                 # --- Block 2 ---
                                 {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
-                                {'type': 'act'},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 
                                 {'type': 'pool'},
@@ -112,10 +131,13 @@ MODEL_CONFIGS = {
 
                                 # --- Block 3 ---
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 
                                 {'type': 'pool'},
@@ -123,10 +145,13 @@ MODEL_CONFIGS = {
 
                                 # --- Block 4 ---
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
 
                                 {'type': 'pool'},
@@ -135,10 +160,13 @@ MODEL_CONFIGS = {
                                 # --- Block 5 --- (Newly Added)
 
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
 
                                 {'type': 'pool'},
@@ -149,12 +177,14 @@ MODEL_CONFIGS = {
                         
     },
 
-    "VGGRemoved_2Layers" : {
+    "VGG_Removed1BlockInFeatureLayer_B" : {
             "feature_config": [
                                 # --- Block 1 ---
                                 {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 
                                 {'type': 'pool'},  
@@ -162,8 +192,10 @@ MODEL_CONFIGS = {
 
                                 # --- Block 2 ---
                                 {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 
                                 {'type': 'pool'},
@@ -171,22 +203,474 @@ MODEL_CONFIGS = {
 
                                 # --- Block 3 ---
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                {'type': 'norm'}, # New Layer
                                 {'type': 'act'},
                                 
                                 {'type': 'pool'},
                                 {'type': 'dropout', 'p': 0.25}
 
+                                # Blocks 4 removed
+
                             ],
             "classifier_config": original_classifier_config
 
+    },
+
+    "VGG13_ExtraLayer_Classifier_F" : {
+            "feature_config": original_feature_config,
+            "classifier_config": [
+                                
+                                {'type': 'full', 'out': 1024},
+                                {'type': 'norm'}, # New Layer
+                                {'type': 'act'},
+                                {'type': 'dropout', 'p': 0.5},
+                                
+                                {'type': 'full', 'out': 1024},
+                                {'type': 'norm'}, # New Layer
+                                {'type': 'act'},
+                                {'type': 'dropout', 'p': 0.5},
+
+                                {'type': 'full', 'out': 256},
+                                {'type': 'norm'}, # New Layer
+                                {'type': 'act'},
+                                {'type': 'dropout', 'p': 0.5},
+
+                                {'type': 'full', 'out': 6}
+                            ]
+    },
+
+    "VGG13_Removed1Layer_Classifier_E" : {
+
+            "feature_config": original_feature_config,
+            "classifier_config": [
+                                {'type': 'full', 'out': 1024},
+                                {'type': 'norm'}, # New Layer
+                                {'type': 'act'},
+                                {'type': 'dropout', 'p': 0.5},
+                                {'type': 'full', 'out': 6}
+                            ]
+    },
+
+    "VGG13_AddedOneLayerPerBlock_Feature_C" : {
+
+                "feature_config": [# --- Block 1 ---
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},  # New Layer
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},  
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 2 ---
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},  # New Layer
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 3 ---
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},  # New Layer
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 4 ---
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},  # New Layer
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25}
+                                ],
+                "classifier_config": original_classifier_config
+    },
+
+    "VGG13_RemovedOneLayerPerBlock_Feature_D" : {
+                "feature_config": [# --- Block 1 ---
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},  
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 2 ---
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 3 ---
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 4 ---
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25}
+                                ],
+                "classifier_config": original_classifier_config
+    },
+
+    "VGG13_B_And_HalfClassifier" : {
+
+                "feature_config": [# --- Block 1 ---
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},  
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 2 ---
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 3 ---
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25}
+
+                                    # Blocks 4 removed"
+                                ],
+
+                "classifier_config": [
+                                    
+                                    {'type': 'full', 'out': 512},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'dropout', 'p': 0.5},
+                                    
+                                    {'type': 'full', 'out': 512},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'dropout', 'p': 0.5},
+                                    
+                                    {'type': 'full', 'out': 6}
+                                ]
+    },
+
+    "VGG13_B_And_HalfClassifier_And_Gap" : {
+
+                "feature_config": [# --- Block 1 ---
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},  
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 2 ---
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 3 ---
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25},
+                                    {'type': 'gap'}
+
+                                    # Blocks 4 removed"
+                                ],
+
+                "classifier_config": [
+                                    
+                                    {'type': 'full', 'out': 512},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'dropout', 'p': 0.5},
+                                    
+                                    {'type': 'full', 'out': 512},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'dropout', 'p': 0.5},
+                                    
+                                    {'type': 'full', 'out': 6}
+                                ]
+    }, 
+
+    "VGG13_B_And_HalfClassifier_StrongPooling" : {
+
+                "feature_config": [# --- Block 1 ---
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},  
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 2 ---
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 3 ---
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25}
+
+                                    # Blocks 4 removed"
+                                ],
+
+                "classifier_config": [
+                                    
+                                    {'type': 'full', 'out': 512},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'dropout', 'p': 0.5},
+                                    
+                                    {'type': 'full', 'out': 512},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'dropout', 'p': 0.5},
+                                    
+                                    {'type': 'full', 'out': 6}
+                                ]
+    },
+
+    "VGG13_B_And_FourthClassifier" : {
+
+                "feature_config": [# --- Block 1 ---
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},  
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 2 ---
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 3 ---
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 256, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25}
+
+                                    # Blocks 4 removed"
+                                ],
+
+                "classifier_config": [
+                                    
+                                    {'type': 'full', 'out': 256},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'dropout', 'p': 0.5},
+                                    
+                                    {'type': 'full', 'out': 256},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'dropout', 'p': 0.5},
+                                    
+                                    {'type': 'full', 'out': 6}
+                                ]
+    },
+
+    "VGG13_B_And_HalfClassifier_KernelCap192" : {
+
+                "feature_config": [# --- Block 1 ---
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 64, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},  
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 2 ---
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 128, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25},
+
+                                    # --- Block 3 ---
+                                    {'type': 'conv', 'out': 192, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 192, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'conv', 'out': 192, 'k': 3, 's': 1, 'p': 1},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    
+                                    {'type': 'pool'},
+                                    {'type': 'dropout', 'p': 0.25}
+
+                                    # Blocks 4 removed"
+                                ],
+
+                "classifier_config": [
+                                    
+                                    {'type': 'full', 'out': 512},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'dropout', 'p': 0.5},
+                                    
+                                    {'type': 'full', 'out': 512},
+                                    {'type': 'norm'}, # New Layer
+                                    {'type': 'act'},
+                                    {'type': 'dropout', 'p': 0.5},
+                                    
+                                    {'type': 'full', 'out': 6}
+                                ]
     }
-            
+
+
+
+
 }
 
+MODELS_TO_TRAIN = [
+    #( "VGG13_Original", MODEL_CONFIGS["VGG13_Original"]),
+    #( "VGG13_ExtraBlockInFeatureLayer_A", MODEL_CONFIGS["VGG13_ExtraBlockInFeatureLayer_A"]),
+    #( "VGG_Removed2BlocksInFeatureLayer_B", MODEL_CONFIGS["VGG_Removed2BlocksInFeatureLayer_B"]),
+    #( "VGG13_AddedOneLayerPerBlock_Feature_C", MODEL_CONFIGS["VGG13_AddedOneLayerPerBlock_Feature_C"]),
+    #( "VGG13_RemovedOneLayerPerBlock_Feature_D", MODEL_CONFIGS["VGG13_RemovedOneLayerPerBlock_Feature_D"]),
+    #( "VGG13_Removed1Layer_Classifier_E", MODEL_CONFIGS["VGG13_Removed1Layer_Classifier_E"]),
+    #( "VGG13_ExtraLayer_Classifier_F", MODEL_CONFIGS["VGG13_ExtraLayer_Classifier_F"]),
+    #( "VGG13_B_And_SmallerClassifier", MODEL_CONFIGS["VGG13_B_And_SmallerClassifier"])
+    #( "VGG13_B_And_HalfClassifier_And_Gap", MODEL_CONFIGS["VGG13_B_And_HalfClassifier_And_Gap"]),
+    #( "VGG13_B_And_HalfClassifier_StrongPooling", MODEL_CONFIGS["VGG13_B_And_HalfClassifier_StrongPooling"])
+    #( "VGG13_B_And_FourthClassifier", MODEL_CONFIGS["VGG13_B_And_FourthClassifier"])
+    ( "VGG13_B_And_HalfClassifier_KernelCap192", MODEL_CONFIGS["VGG13_B_And_HalfClassifier_KernelCap192"])
+]
 # --- HELPER FUNCTIONS ---
 
 def weights_init(m):
@@ -196,6 +680,9 @@ def weights_init(m):
             init.constant_(m.bias, 0)
     elif isinstance(m, nn.Linear):
         init.normal_(m.weight, 0, 0.01)
+        init.constant_(m.bias, 0)
+    elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
+        init.constant_(m.weight, 1)
         init.constant_(m.bias, 0)
 
 
@@ -269,6 +756,8 @@ def train_evaluate_pipeline(model_config, config_name=""):
     model = CustomCNN(feature_config, classifier_config)
     model.apply(weights_init)
     model.to(device)
+
+    print(f"Model {config_name} has {sum(p.numel() for p in model.parameters() if p.requires_grad)} trainable parameters.")
     
     # 4. Initialize Optimizer (Fixed SGD)
     optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
@@ -276,8 +765,9 @@ def train_evaluate_pipeline(model_config, config_name=""):
         
     criterion = nn.CrossEntropyLoss(weight=CLASS_WEIGHTS_TENSOR.to(device))
 
-    loss_history = []
+    train_loss_history = []
     acc_history = []
+    test_loss_history = []
     
     # --- EPOCH LOOP ---
     for epoch in range(EPOCHS):
@@ -304,22 +794,40 @@ def train_evaluate_pipeline(model_config, config_name=""):
         scheduler.step()
             
         # Record training metrics
-        loss_history.append(running_loss / len(trainDataLoader))
+        train_loss_history.append(running_loss / len(trainDataLoader))
         
-        # Validation Loop for Accuracy History
-        y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
-        correct = torch.sum(y_true == y_pred).item()
-        total = y_true.size(0)
-        epoch_acc = correct / total * 100
-        acc_history.append(epoch_acc)
+        model.eval()
+        val_running_loss = 0.0
+        val_correct = 0
+        val_total = 0
         
-        print(f"   [Epoch {epoch+1} Test Acc: {epoch_acc:.2f}%]")
-        print(f"  [Epoch {epoch+1}] Training Loss: {loss_history[-1]:.4f}")
+        with torch.no_grad():
+            for batch in valDataLoader:
+                imgs = batch['image'].to(device)
+                targets = batch['label'].to(device)
+                
+                out = model(imgs)
+                loss = criterion(out, targets) # Calculate Test Loss
+                
+                val_running_loss += loss.item()
+                
+                # Calculate Accuracy
+                _, preds = torch.max(out, 1)
+                val_correct += (preds == targets).sum().item()
+                val_total += targets.size(0)
+        
+        val_epoch_loss = val_running_loss / len(valDataLoader)
+        val_epoch_acc = val_correct / val_total * 100
+        
+        test_loss_history.append(val_epoch_loss)
+        acc_history.append(val_epoch_acc)
+        
+        print(f"   [Epoch {epoch+1}] Train Loss: {train_loss_history[-1]:.4f} | Test Loss: {val_epoch_loss:.4f} | Test Acc: {val_epoch_acc:.2f}%")
 
     # Get final predictions for Confusion Matrix
     y_true_final, y_pred_final = get_all_predictions_torch(model, valDataLoader, device)
     
-    return model, loss_history, acc_history, y_true_final, y_pred_final
+    return model, train_loss_history, test_loss_history, acc_history, y_true_final, y_pred_final
 
 
 # --- MAIN EXPERIMENT LOOP ---
@@ -327,35 +835,44 @@ def train_evaluate_pipeline(model_config, config_name=""):
 def run_experiments():
     print("Starting Custom CNN Experiments...")
     
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    for config_name, config_model in MODEL_CONFIGS.items():
-        
+    for config_name, config_model in MODELS_TO_TRAIN:
+
         print(f"\n==============================================")
         print(f"Running Experiment: {config_name}")
         print(f"==============================================")
             
-        # Run Pipeline (pass config_name for debug plots)
-        model, loss_hist, acc_hist, y_true, y_pred = train_evaluate_pipeline(
+        # 1. FIXED UNPACKING: Now accepts 6 variables
+        model, train_loss, test_loss, acc_hist, y_true, y_pred = train_evaluate_pipeline(
             config_model, 
             config_name=config_name
         )
             
-        # 1. Plot Loss History
-        plot_title_loss = f"Loss History {config_name}"
-        filename_loss = f"Experiments/Plots/Loss_{config_name}.png"
-        plot_history(loss_hist, plot_title_loss, filename_loss, ylabel="Loss")
+        # 2. Plot Training Loss
+        plot_history(
+            train_loss, 
+            f"Training Loss {config_name}", 
+            f"Experiments/Plots/Train_Loss_{config_name}.png", 
+            ylabel="Loss"
+        )
+
+        # 3. Plot Test Loss 
+        plot_history(
+            test_loss, 
+            f"Test Loss {config_name}", 
+            f"Experiments/Plots/Test_Loss_{config_name}.png", 
+            ylabel="Loss"
+        )
             
-        # 2. Plot Test Accuracy History
+        # 4. Plot Test Accuracy History
         plot_title_acc = f"Test Accuracy {config_name}"
         filename_acc = f"Experiments/Plots/Accuracy_{config_name}.png"
         plot_history(acc_hist, plot_title_acc, filename_acc, ylabel="Accuracy (%)")
             
-        # 3. Plot Confusion Matrix
+        # 5. Plot Confusion Matrix
         cm_tensor = compute_confusion_matrix_torch(y_true, y_pred, num_classes=6)
         plot_title_cm = f"Confusion Matrix {config_name}"
         filename_cm = f"Experiments/Plots/CM_{config_name}.png"
-            
+
         plot_confusion_matrix(
             cm_tensor.numpy(), 
             CLASS_NAMES, 
@@ -363,7 +880,11 @@ def run_experiments():
             filename_cm
         )
 
-        torch.save(model.state_dict(), f"Experiments/Models/{config_name}_Acc{int(acc_hist[-1])}.pth")
+        if SAVE_MODELS:
+            torch.save(model.state_dict(), f"Experiments/Models/{config_name}_Acc{int(acc_hist[-1])}.pth")
+
+        with open(LOG_FILE, "a") as f:
+            f.write(f"Experiment: {config_name}, Accuracy: {acc_hist[-1]:.2f}%, Test-Loss: {test_loss[-1]:.4f}, Train-Loss: {train_loss[-1]:.4f}\n")
             
         print(f"Completed {config_name}. Plots saved.")
 

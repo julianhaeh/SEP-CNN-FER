@@ -50,12 +50,12 @@ CLASS_WEIGHTS_TENSOR = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
 # --- CONFIGURATIONS ---
 # 1. Hyperparameter Configs
 HYPERPARAM_CONFIGS = {
-    # "Tuned": {
-    #    "BETA": 0.7,
-    #    "MARGIN_1": 0.3,
-    #    "MARGIN_2": 0.25,
-    #    "GAMMA": 0.5
-    #},
+    "Tuned": {
+        "BETA": 0.7200,
+        "MARGIN_1": 0.2800,
+        "MARGIN_2": 0.4600,
+        "GAMMA": 0.2200
+    },
      "Original": {
         "BETA": 0.7,
         "MARGIN_1": 0.15,
@@ -94,7 +94,7 @@ def plot_attention_weights_vs_loss(all_attention_weights, y_true, y_logits, expe
     
     plt.figure(figsize=(8, 6))
     plt.scatter(att_weights_np, loss_per_sample, alpha=0.6)
-    plt.title(f"Attention Weight vs CE-loss - {experiment_title}", fontsize=14, fontweight='bold')
+    plt.title(f"Attention Weight vs CE-loss")
     plt.xlabel("Attention Weight (α)", fontsize=12)
     plt.ylabel("CE-loss", fontsize=12)
     plt.grid(axis='y', alpha=0.75)
@@ -108,9 +108,9 @@ def plot_attention_weights_vs_loss(all_attention_weights, y_true, y_logits, expe
 
 def plot_relabeling_comparison(dataset, relabeled_mask, config_name, save_dir="Experiments/Plots"):
     """
-    Creates a 2x2 plot showing relabeling effects:
-    - Top row: 2 relabeled samples with original and new labels
-    - Bottom row: 2 non-relabeled samples with original labels
+    Creates a 2x4 plot showing relabeling effects:
+    - Top row: 4 relabeled samples with original and new labels
+    - Bottom row: 4 non-relabeled samples with original labels
     
     Args:
         dataset: The training dataset (OurDatasetSCN) with both label and original_label attributes
@@ -129,20 +129,20 @@ def plot_relabeling_comparison(dataset, relabeled_mask, config_name, save_dir="E
     non_relabeled_indices = np.where(~relabeled_mask)[0]
     
     # Check if we have enough samples
-    if len(relabeled_indices) < 2:
-        print(f"Warning: Only {len(relabeled_indices)} relabeled samples found. Need at least 2.")
+    if len(relabeled_indices) < 4:
+        print(f"Warning: Only {len(relabeled_indices)} relabeled samples found. Need at least 4.")
         return
-    if len(non_relabeled_indices) < 2:
-        print(f"Warning: Only {len(non_relabeled_indices)} non-relabeled samples found. Need at least 2.")
+    if len(non_relabeled_indices) < 4:
+        print(f"Warning: Only {len(non_relabeled_indices)} non-relabeled samples found. Need at least 4.")
         return
     
-    # Randomly select 2 relabeled and 2 non-relabeled samples
+    # Randomly select 4 relabeled and 4 non-relabeled samples
     np.random.seed(42)  # For reproducibility
-    selected_relabeled = np.random.choice(relabeled_indices, size=2, replace=False)
-    selected_non_relabeled = np.random.choice(non_relabeled_indices, size=2, replace=False)
+    selected_relabeled = np.random.choice(relabeled_indices, size=4, replace=False)
+    selected_non_relabeled = np.random.choice(non_relabeled_indices, size=4, replace=False)
     
-    # Create 2x2 subplot
-    fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+    # Create 2x4 subplot
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
     
     # Top row: Relabeled samples
     for col, idx in enumerate(selected_relabeled):
@@ -178,7 +178,7 @@ def plot_relabeling_comparison(dataset, relabeled_mask, config_name, save_dir="E
         
         # Set title with both labels
         ax.set_title(f"Original: {original_name}\nRelabeled: {current_name}", 
-                     fontsize=11, fontweight='bold', color='red')
+                     fontsize=22, fontweight='bold', color='red')
         
         # Add red border to indicate relabeling
         for spine in ax.spines.values():
@@ -219,7 +219,7 @@ def plot_relabeling_comparison(dataset, relabeled_mask, config_name, save_dir="E
         
         # Set title with original label only
         ax.set_title(f"Original: {original_name}", 
-                     fontsize=11, fontweight='bold', color='green')
+                     fontsize=22, fontweight='bold', color='green')
         
         # Add green border to indicate no relabeling
         for spine in ax.spines.values():
