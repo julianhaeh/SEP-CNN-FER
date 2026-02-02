@@ -14,7 +14,7 @@ class ConvBNReLU(nn.Module):
                 g -= 1
             return nn.GroupNorm(g, ch)
 
-        self.residual = residual and second_conv  # residual nur sinnvoll mit 2 convs
+        self.residual = residual and second_conv #only useful with at least 2 conv-layers
 
         # Main-Layer
         layers = [
@@ -35,7 +35,6 @@ class ConvBNReLU(nn.Module):
 
         self.net = nn.Sequential(*layers)
 
-        # Skip/Projection wenn nötig (nur wenn residual aktiv)
         if self.residual:
             if (in_ch != out_ch) or (s != 1):
                 self.skip = nn.Sequential(
@@ -54,7 +53,7 @@ class ConvBNReLU(nn.Module):
         return out
 
 
-class SEBlock(nn.Module): # Squeeze-and-Excitation; lässt Netz selbst entscheiden, welche FeatureMaps im Moment wichtig sind, welche nicht. 
+class SEBlock(nn.Module): # Squeeze-and-Excitation; lets the network itself decide which feature maps are more relevant than others
     """Squeeze-and-Excitation: oft guter Accuracy-Boost bei wenig Overhead."""
     def __init__(self, ch, r=8):
         super().__init__()
@@ -73,12 +72,7 @@ class SEBlock(nn.Module): # Squeeze-and-Excitation; lässt Netz selbst entscheid
         return x * w
     
 class OurCNN(nn.Module):
-    """
-    Standard Baseline CNN für 64x64 Grayscale.
-    - 4 Stages, jeweils Downsampling via MaxPool
-    - 2 Conv-Blöcke pro Stage
-    - GAP + MLP-Head
-    """
+
     def __init__(
         self,
         num_classes: int = 6,
