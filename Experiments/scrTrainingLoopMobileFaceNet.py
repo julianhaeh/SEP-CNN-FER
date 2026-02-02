@@ -18,7 +18,7 @@ def train_emotion_mobilefacenet(
     num_workers=8,
     save_path=f"mobilefacenet_{time.strftime('%Y%m%d_%H%M%S')}.pth",
     device=None,
-):
+    ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
     print(f"Start mit Batchsize: {batch_size}, Learning Rate: {lr}, Workers: {num_workers}")
