@@ -1,76 +1,43 @@
-# Demo/infer_webcam.py
 import argparse
+import time
 import cv2
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ModelArchitectures.clsMobileFaceNet import MobileFacenet
-from Demo.labels import EMOTIONS
-from Demo.gradcam import GradCAM, find_last_conv2d
+from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
+from Demo.gradcam import GradCAM
 from Demo.video_utils import largest_face_bbox, overlay_heatmap, draw_bbox
+from Demo.labels import EMOTIONS
 
 
 NUM_CLASSES = 6
 
 
-def preprocess(face_bgr, in_channels=1):
-    """Resize to 64x64 and convert to tensor [1,C,64,64] in [0,1]."""
+def preprocess(face_bgr):
+    """Resize to 64x64 grayscale and convert to tensor [1,1,64,64] in [0,1]."""
     face = cv2.resize(face_bgr, (64, 64), interpolation=cv2.INTER_AREA)
-
-    if in_channels == 1:
-        face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-        x = face.astype(np.float32) / 255.0
-        x = torch.from_numpy(x)[None, None, :, :]  # [1,1,64,64]
-    else:
-        face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
-        x = face.astype(np.float32) / 255.0
-        x = torch.from_numpy(x).permute(2, 0, 1)[None, :, :, :]  # [1,3,64,64]
+    face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+    x = face.astype(np.float32) / 255.0
+    x = torch.from_numpy(x)[None, None, :, :]  # [1,1,64,64]
     return x
 
 
-class FERModel(nn.Module):
-    """Backbone (MobileFaceNet) + Linear head -> 6 emotion logits."""
-    def __init__(self, backbone: nn.Module, head: nn.Module):
-        super().__init__()
-        self.backbone = backbone
-        self.head = head
-
-    def forward(self, x):
-        emb = self.backbone(x)      # [B,128]
-        logits = self.head(emb)     # [B,6]
-        return logits
-
-
 def load_model(weights_path: str, device: torch.device):
-    """
-    Loads checkpoints saved by your training loop:
-      torch.save({"model_state_dict": ..., "head_state_dict": ...}, path)
-    """
-    ckpt = torch.load(weights_path, map_location=device)
+    """Loads VGG13Reduced checkpoints saved as: torch.save(model.state_dict(), path)"""
+    state = torch.load(weights_path, map_location=device)
+    if not isinstance(state, dict):
+        raise RuntimeError("Expected a state_dict (dict of tensors) for VGG13Reduced weights.")
 
-    if not (isinstance(ckpt, dict) and "model_state_dict" in ckpt and "head_state_dict" in ckpt):
-        raise RuntimeError(
-            "Checkpoint format not recognized. Expected keys: model_state_dict and head_state_dict.\n"
-            "Use the timestamp checkpoint saved by scrTrainingLoopMobileFaceNet.py (mobilefacenet_*.pth)."
-        )
-
-    backbone = MobileFacenet().to(device)
-    head = nn.Linear(128, NUM_CLASSES).to(device)
-
-    backbone.load_state_dict(ckpt["model_state_dict"], strict=True)
-    head.load_state_dict(ckpt["head_state_dict"], strict=True)
-
-    model = FERModel(backbone, head).to(device)
+    model = CustomVGG13Reduced().to(device)
+    model.load_state_dict(state, strict=True)
     model.eval()
 
-    first_conv = next(m for m in backbone.modules() if isinstance(m, nn.Conv2d))
-    in_channels = int(first_conv.in_channels)
-    print("[load] first conv in_channels =", in_channels)
-
-    print("[load] loaded backbone + head checkpoint")
-    return model, in_channels
+    first_conv = next(m for m in model.modules() if isinstance(m, nn.Conv2d))
+    print("[load] first conv in_channels =", int(first_conv.in_channels))
+    print("[load] loaded VGG13Reduced checkpoint")
+    return model
 
 
 def clamp_roi(roi, W, H):
@@ -82,13 +49,12 @@ def clamp_roi(roi, W, H):
     return (x, y, w, h)
 
 
-def pad_roi_square(bb, W, H, pad=0.10):
+def pad_roi(bb, W, H, pad_x=0.08, pad_top=0.02, pad_bot=0.12):
     x, y, w, h = map(int, bb)
-    cx, cy = x + w // 2, y + h // 2
-    side = int(max(w, h) * (1 + 2 * pad))
-    x0 = cx - side // 2
-    y0 = cy - side // 2
-    return clamp_roi((x0, y0, side, side), W, H)
+    px = int(w * pad_x)
+    pt = int(h * pad_top)
+    pb = int(h * pad_bot)
+    return clamp_roi((x - px, y - pt, w + 2 * px, h + pt + pb), W, H)
 
 
 def normalize_bbox(bb, W, H, min_size=20):
@@ -171,58 +137,57 @@ def draw_text_box(img, text, x, y, *, scale=0.7, thickness=2, anchor="tl",
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cam", default=0, help="webcam index (0,1,...) or stream URL")
-    ap.add_argument("--weights", default="mobilefacenet_20260123_194739.pth", help="weights .pth path")
+    ap.add_argument("--weights", default=r".\Experiments\Models\VGG13_Original_Unweighted_CE_Acc_72.20.pth", help="VGG13Reduced weights .pth path (state_dict)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+
+    # webcam
+    ap.add_argument("--camera", type=int, default=0, help="camera index (0 is default)")
+    ap.add_argument("--flip", action="store_true", help="mirror webcam horizontally")
+    ap.add_argument("--save", default="", help="optional output path to record the live demo (mp4 recommended)")
+
+    # inference
     ap.add_argument("--every_n", type=int, default=2, help="compute prediction/CAM every N frames")
     ap.add_argument("--no_face", action="store_true", help="use full frame instead of face crop")
 
-    # ROI smoothing / stability
+    # ROI smoothing / stability (same as your video script)
     ap.add_argument("--roi_alpha", type=float, default=0.85, help="ROI EMA smoothing (0.8-0.95)")
-    ap.add_argument("--pad", type=float, default=0.15, help="padding around detected face box")
+    ap.add_argument("--pad", type=float, default=0.03, help="padding around detected face box")
     ap.add_argument("--iou_gate", type=float, default=0.15, help="reject detections with IoU < gate")
     ap.add_argument("--max_miss", type=int, default=10, help="keep last ROI for up to N missed frames")
-
-    # Display / optional recording
-    ap.add_argument("--window", default="FER Webcam", help="OpenCV window title")
-    ap.add_argument("--record", default="", help="optional output video path (mp4/avi). empty=off")
-    ap.add_argument("--codec", default="mp4v", help="fourcc codec (mp4v or XVID)")
-    ap.add_argument("--flip", action="store_true", help="mirror webcam horizontally (selfie mode)")
 
     args = ap.parse_args()
 
     device = torch.device(args.device)
-    model, in_channels = load_model(args.weights, device)
+    model = load_model(args.weights, device)
 
-    # Grad-CAM target layer
-    try:
-        target_layer = model.backbone.conv2
-    except Exception:
-        target_layer = find_last_conv2d(model)
+    # Grad-CAM target layer (keep exactly what you used in video)
+    target_layer = model.features[12]
     print("[gradcam] using target layer:", target_layer)
     cam_engine = GradCAM(model, target_layer)
 
-    # Open webcam or stream
-    cam_src = int(args.cam) if str(args.cam).isdigit() else args.cam
-    cap = cv2.VideoCapture(cam_src)
+    # camera capture (CAP_DSHOW helps on Windows)
+    cap = cv2.VideoCapture(args.camera, cv2.CAP_DSHOW if hasattr(cv2, "CAP_DSHOW") else 0)
     if not cap.isOpened():
-        raise RuntimeError(f"Could not open camera/stream: {args.cam}")
+        raise RuntimeError(f"Could not open camera index {args.camera}")
 
-    # read initial size
-    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
-    H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if not fps or fps < 5:
-        fps = 30.0  # fallback for webcams that report 0
+    # Grab one frame to get dimensions
+    ok, frame = cap.read()
+    if not ok:
+        raise RuntimeError("Could not read from webcam.")
+    if args.flip:
+        frame = cv2.flip(frame, 1)
 
+    H, W = frame.shape[:2]
+
+    # Optional recorder
     out = None
-    if args.record:
-        fourcc = cv2.VideoWriter_fourcc(*args.codec)
-        out = cv2.VideoWriter(args.record, fourcc, fps, (W, H))
+    if args.save:
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        out = cv2.VideoWriter(args.save, cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H))
         if not out.isOpened():
-            raise RuntimeError("VideoWriter failed. Try --codec XVID and .avi.")
+            raise RuntimeError("VideoWriter failed. Try output .avi and codec XVID.")
 
-    # state
+    # state (same as video)
     last_label = "?"
     last_conf = 0.0
     last_heat = None
@@ -231,7 +196,12 @@ def main():
 
     roi_smooth = None
     miss_count = 0
+
     frame_idx = 0
+    fps_ema = 0.0
+    t_prev = time.time()
+
+    print("Webcam running. Press 'q' or ESC to quit.")
 
     while True:
         ok, frame = cap.read()
@@ -241,20 +211,18 @@ def main():
         if args.flip:
             frame = cv2.flip(frame, 1)
 
-        H, W = frame.shape[:2]
         frame_idx += 1
-
-        bb = None
-        det_roi = None
         roi = (0, 0, W, H)
 
         # ---------- Face detection + ROI smoothing ----------
         if not args.no_face:
             bb = largest_face_bbox(frame)
+            det_roi = None
+
             if bb is not None:
                 bb = normalize_bbox(bb, W, H)
                 if bb is not None:
-                    det_roi = pad_roi_square(bb, W, H, pad=args.pad)
+                    det_roi = pad_roi(bb, W, H)
 
             # reject teleport-y false positives
             if det_roi is not None and roi_smooth is not None:
@@ -283,17 +251,25 @@ def main():
 
             roi = roi_smooth if roi_smooth is not None else (0, 0, W, H)
 
+            if (not args.no_face) and (roi_smooth is None):
+                last_heat = None
+                last_roi = (0, 0, W, H)
+
         # crop
         x, y, w, h = roi
-        crop = frame[y:y+h, x:x+w]
-        can_infer = (frame_idx % args.every_n == 0) and (args.no_face or roi_smooth is not None) and (crop.size > 0)
+        crop = frame[y:y + h, x:x + w]
+        crop_ok = (crop.size != 0)
 
         # ---------- Inference/CAM ----------
+        can_infer = crop_ok and (frame_idx % args.every_n == 0) and (args.no_face or roi_smooth is not None)
+
         if can_infer:
-            inp = preprocess(crop, in_channels=in_channels).to(device)
+            inp = preprocess(crop).to(device)
             inp.requires_grad_(True)
 
-            heat, logits = cam_engine(inp)
+            # 1) run Grad-CAM once (default class = argmax(logits))
+            heat0, logits = cam_engine(inp)
+
             raw_probs = F.softmax(logits, dim=1).detach().cpu().numpy()[0]
 
             # EMA smoothing over time
@@ -302,14 +278,22 @@ def main():
             else:
                 last_probs = 0.8 * last_probs + 0.2 * raw_probs
 
-            pred = int(np.argmax(last_probs))
-            new_conf = float(last_probs[pred])
+            pred_smooth = int(np.argmax(last_probs))
+            new_conf = float(last_probs[pred_smooth])
+
+            # 2) ensure heatmap explains the SAME class you display
+            pred_now = int(np.argmax(raw_probs))
+            if pred_smooth != pred_now:
+                heat, _ = cam_engine(inp, class_idx=pred_smooth)
+            else:
+                heat = heat0
+
             new_heat = np.squeeze(heat.detach().cpu().numpy())
 
-            last_label = EMOTIONS[pred] if pred < len(EMOTIONS) else f"class_{pred}"
+            last_label = EMOTIONS[pred_smooth]
             last_roi = roi
 
-            # smooth confidence + heatmap
+            # temporal smoothing for confidence + heatmap
             if last_heat is None or np.shape(last_heat) != np.shape(new_heat):
                 last_conf = new_conf
                 last_heat = new_heat
@@ -320,47 +304,58 @@ def main():
         # ---------- Draw output ----------
         vis = frame.copy()
 
-        if (not args.no_face) and roi_smooth is None:
-            vis = draw_text_box(vis, "No face detected (heatmap off)", 10, 30, scale=0.7, thickness=2)
-            vis = draw_text_box(vis, f"{last_label} {last_conf:.2f}", 10, 60, scale=0.75, thickness=2)
-        else:
+        if args.no_face or roi_smooth is not None:
             vis = draw_bbox(vis, roi)
 
-            if last_heat is not None and last_roi != (0, 0, W, H):
-                vis = overlay_heatmap(vis, last_roi, last_heat, alpha=0.35)
+        if (roi_smooth is not None) and (last_heat is not None) and (last_roi != (0, 0, W, H)):
+            a = 0.15 + 0.35 * max(0.0, min(1.0, (last_conf - 0.3) / 0.4))  # ~0.15..0.50
+
+            heat = last_heat.astype(np.float32)
+            heat = cv2.GaussianBlur(heat, (0, 0), sigmaX=2.0)
+            heat = np.clip(heat, 0.0, 1.0)
+            heat = heat ** 0.6
+            vis = overlay_heatmap(vis, last_roi, heat, alpha=float(a))
 
             x, y, w, h = roi
             main_text = f">{last_label} {last_conf:.2f}"
-            vis = draw_text_box(
-                vis,
-                main_text,
-                x + w,
-                max(20, y - 6),
-                anchor="tl",
-                scale=0.85,
-                thickness=2,
-                pad=0
-            )
+            vis = draw_text_box(vis, main_text, x + w, max(20, y - 6),
+                                anchor="tl", scale=0.85, thickness=2, pad=0)
 
+        # scoreboard
         if last_probs is not None:
             order = np.argsort(-last_probs)
             sx, sy, dy = 10, 30, 35
             for rank, idx in enumerate(order):
-                line = f"{rank+1}. {EMOTIONS[idx]}: {last_probs[idx]:.2f}"
+                line = f"{rank + 1}. {EMOTIONS[idx]}: {last_probs[idx]:.2f}"
                 vis = draw_text_box(vis, line, sx, sy + rank * dy, scale=0.65, thickness=1)
 
+        if (not args.no_face) and roi_smooth is None:
+
+            fps_y = H - 10
+            vis = draw_text_box(vis, "No face detected (heatmap off)", 10, fps_y - 70, scale=0.7, thickness=2)
+            vis = draw_text_box(vis, f"{last_label} {last_conf:.2f}", 10, fps_y - 35, scale=0.75, thickness=2)
+
+        # FPS overlay
+        t_now = time.time()
+        dt = max(1e-6, t_now - t_prev)
+        fps_inst = 1.0 / dt
+        fps_ema = fps_inst if fps_ema == 0.0 else (0.9 * fps_ema + 0.1 * fps_inst)
+        t_prev = t_now
+        vis = draw_text_box(vis, f"FPS: {fps_ema:.1f}", 10, H - 10, scale=0.7, thickness=2)
+
+        # Show + optional record
+        cv2.imshow("FER Webcam Demo", vis)
         if out is not None:
             out.write(vis)
 
-        cv2.imshow(args.window, vis)
         key = cv2.waitKey(1) & 0xFF
-        if key == ord('q') or key == 27:  # q or ESC
+        if key in (ord("q"), 27):  # q or ESC
             break
 
     cap.release()
     if out is not None:
         out.release()
-        print(f"Saved recording: {args.record}")
+        print(f"Saved recording: {args.save}")
     cv2.destroyAllWindows()
 
 

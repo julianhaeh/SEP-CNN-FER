@@ -5,71 +5,43 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ModelArchitectures.clsMobileFaceNet import MobileFacenet
-from Demo.labels import EMOTIONS
+from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Demo.gradcam import GradCAM, find_last_conv2d
 from Demo.video_utils import largest_face_bbox, overlay_heatmap, draw_bbox
+from Demo.labels import EMOTIONS
 
 
 NUM_CLASSES = 6
 
 
-def preprocess(face_bgr, in_channels=1):
-    """Resize to 64x64 and convert to tensor [1,C,64,64] in [0,1]."""
+def preprocess(face_bgr):
+    """Resize to 64x64 grayscale and convert to tensor [1,1,64,64] in [0,1]."""
     face = cv2.resize(face_bgr, (64, 64), interpolation=cv2.INTER_AREA)
-
-    if in_channels == 1:
-        face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-        x = face.astype(np.float32) / 255.0
-        x = torch.from_numpy(x)[None, None, :, :]  # [1,1,64,64]
-    else:
-        face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
-        x = face.astype(np.float32) / 255.0
-        x = torch.from_numpy(x).permute(2, 0, 1)[None, :, :, :]  # [1,3,64,64]
+    face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+    x = face.astype(np.float32) / 255.0
+    x = torch.from_numpy(x)[None, None, :, :]  # [1,1,64,64]
     return x
-
-
-class FERModel(nn.Module):
-    """Backbone (MobileFaceNet) + Linear head -> 6 emotion logits."""
-    def __init__(self, backbone: nn.Module, head: nn.Module):
-        super().__init__()
-        self.backbone = backbone
-        self.head = head
-
-    def forward(self, x):
-        emb = self.backbone(x)      # [B,128]
-        logits = self.head(emb)     # [B,6]
-        return logits
 
 
 def load_model(weights_path: str, device: torch.device):
     """
-    Loads checkpoints saved by your training loop:
-      torch.save({"model_state_dict": ..., "head_state_dict": ...}, path)
+    Loads VGG13Reduced checkpoints saved as:
+      torch.save(model.state_dict(), path)
     """
-    ckpt = torch.load(weights_path, map_location=device)
+    state = torch.load(weights_path, map_location=device)
+    if not isinstance(state, dict):
+        raise RuntimeError("Expected a state_dict (dict of tensors) for VGG13Reduced weights.")
 
-    if not (isinstance(ckpt, dict) and "model_state_dict" in ckpt and "head_state_dict" in ckpt):
-        raise RuntimeError(
-            "Checkpoint format not recognized. Expected keys: model_state_dict and head_state_dict.\n"
-            "Use the timestamp checkpoint saved by scrTrainingLoopMobileFaceNet.py (mobilefacenet_*.pth)."
-        )
-
-    backbone = MobileFacenet().to(device)
-    head = nn.Linear(128, NUM_CLASSES).to(device)
-
-    backbone.load_state_dict(ckpt["model_state_dict"], strict=True)
-    head.load_state_dict(ckpt["head_state_dict"], strict=True)
-
-    model = FERModel(backbone, head).to(device)
+    model = CustomVGG13Reduced().to(device)
+    model.load_state_dict(state, strict=True)
     model.eval()
 
-    first_conv = next(m for m in backbone.modules() if isinstance(m, nn.Conv2d))
-    in_channels = int(first_conv.in_channels)
-    print("[load] first conv in_channels =", in_channels)
+    # sanity: first conv should be 1-channel
+    first_conv = next(m for m in model.modules() if isinstance(m, nn.Conv2d))
+    print("[load] first conv in_channels =", int(first_conv.in_channels))
+    print("[load] loaded VGG13Reduced checkpoint")
 
-    print("[load] loaded backbone + head checkpoint")
-    return model, in_channels
+    return model
 
 
 def clamp_roi(roi, W, H):
@@ -81,13 +53,13 @@ def clamp_roi(roi, W, H):
     return (x, y, w, h)
 
 
-def pad_roi_square(bb, W, H, pad=0.10):
+def pad_roi(bb, W, H, pad_x=0.08, pad_top=0.02, pad_bot=0.12):
     x, y, w, h = map(int, bb)
-    cx, cy = x + w // 2, y + h // 2
-    side = int(max(w, h) * (1 + 2 * pad))
-    x0 = cx - side // 2
-    y0 = cy - side // 2
-    return clamp_roi((x0, y0, side, side), W, H)
+    px = int(w * pad_x)
+    pt = int(h * pad_top)
+    pb = int(h * pad_bot)
+    return clamp_roi((x - px, y - pt, w + 2 * px, h + pt + pb), W, H)
+
 
 def normalize_bbox(bb, W, H, min_size=20):
     """
@@ -104,12 +76,8 @@ def normalize_bbox(bb, W, H, min_size=20):
         b *= H
 
     candidates = []
-
-    # Candidate 1: treat as xywh
-    candidates.append((x, y, a, b))
-
-    # Candidate 2: treat as xyxy
-    candidates.append((x, y, a - x, b - y))
+    candidates.append((x, y, a, b))          # xywh
+    candidates.append((x, y, a - x, b - y))  # xyxy -> xywh
 
     best = None
     best_score = -1.0
@@ -118,19 +86,16 @@ def normalize_bbox(bb, W, H, min_size=20):
         roi = clamp_roi((int(round(cx)), int(round(cy)), int(round(cw)), int(round(ch))), W, H)
         _, _, w, h = roi
 
-        # reject tiny boxes
         if w < min_size or h < min_size:
             continue
 
         area = w * h
         frac = area / float(W * H + 1e-6)
-        ar = w / float(h + 1e-6)  # aspect ratio
+        ar = w / float(h + 1e-6)
 
-        # faces are roughly "not insanely wide or tall"
         if ar < 0.35 or ar > 2.8:
             continue
 
-        # score prefers: decent area, aspect near 1, not nearly full frame
         score = area * np.exp(-abs(np.log(ar)))
         if frac > 0.90:
             score *= 0.05
@@ -159,17 +124,12 @@ def iou_xywh(a, b):
 
 def draw_text_box(img, text, x, y, *, scale=0.7, thickness=2, anchor="tl",
                   fg=(255, 255, 255), bg=(0, 0, 0), pad=6):
-    """
-    Draw text with a filled background box.
-    anchor:
-      "tl" = x,y is top-left corner
-      "tr" = x,y is top-right corner
-    """
+    """Draw text with a filled background box."""
     font = cv2.FONT_HERSHEY_SIMPLEX
     (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
 
     if anchor == "tr":
-        x = x - tw - pad  # shift so text ends at x
+        x = x - tw - pad
 
     x = int(max(0, min(x, img.shape[1] - tw - 2 * pad)))
     y = int(max(th + 2 * pad, min(y, img.shape[0] - 2)))
@@ -183,28 +143,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True, help="input video path")
     ap.add_argument("--output", required=True, help="output video path (mp4 recommended)")
-    ap.add_argument("--weights", default="mobilefacenet_20260123_194739.pth", help="weights .pth path")
+    ap.add_argument("--weights", required=True, help="VGG13Reduced weights .pth path (state_dict)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--every_n", type=int, default=2, help="compute prediction/CAM every N frames")
     ap.add_argument("--no_face", action="store_true", help="use full frame instead of face crop")
 
     # ROI smoothing / stability
     ap.add_argument("--roi_alpha", type=float, default=0.85, help="ROI EMA smoothing (0.8-0.95)")
-    ap.add_argument("--pad", type=float, default=0.15, help="padding around detected face box")
+    ap.add_argument("--pad", type=float, default=0.03, help="padding around detected face box")
     ap.add_argument("--iou_gate", type=float, default=0.15, help="reject detections with IoU < gate")
     ap.add_argument("--max_miss", type=int, default=10, help="keep last ROI for up to N missed frames")
 
     args = ap.parse_args()
 
     device = torch.device(args.device)
-    model, in_channels = load_model(args.weights, device)
+    model = load_model(args.weights, device)
 
-    # Grad-CAM target layer
-    try:
-        target_layer = model.backbone.conv2
-    except Exception:
-        target_layer = find_last_conv2d(model)
-
+    # Grad-CAM target layer: last Conv2d in the model
+    target_layer = model.features[12]
     print("[gradcam] using target layer:", target_layer)
     cam_engine = GradCAM(model, target_layer)
 
@@ -237,19 +193,17 @@ def main():
             break
         frame_idx += 1
 
-        bb = None
-        det_roi = None
         roi = (0, 0, W, H)
 
         # ---------- Face detection + ROI smoothing ----------
         if not args.no_face:
             bb = largest_face_bbox(frame)
+            det_roi = None
+
             if bb is not None:
                 bb = normalize_bbox(bb, W, H)
                 if bb is not None:
-                    det_roi = pad_roi_square(bb, W, H, pad=args.pad)
-                else:
-                    det_roi = None
+                    det_roi = pad_roi(bb, W, H)
 
             # reject teleport-y false positives
             if det_roi is not None and roi_smooth is not None:
@@ -276,25 +230,22 @@ def main():
                 if miss_count > args.max_miss:
                     roi_smooth = None
 
-            if roi_smooth is not None:
-                roi = roi_smooth
-            else:
-                roi = (0, 0, W, H)
+            roi = roi_smooth if roi_smooth is not None else (0, 0, W, H)
 
         # crop
         x, y, w, h = roi
         crop = frame[y:y+h, x:x+w]
-        if crop.size == 0:
-            can_infer = False
+        crop_ok = (crop.size != 0)
 
         # ---------- Inference/CAM ----------
-        can_infer = (frame_idx % args.every_n == 0) and (args.no_face or roi_smooth is not None)
+        can_infer = crop_ok and (frame_idx % args.every_n == 0) and (args.no_face or roi_smooth is not None)
 
         if can_infer:
-            inp = preprocess(crop, in_channels=in_channels).to(device)
+            inp = preprocess(crop).to(device)
             inp.requires_grad_(True)
 
-            heat, logits = cam_engine(inp)
+            # 1) run Grad-CAM once (default class = argmax(logits))
+            heat0, logits = cam_engine(inp)
 
             raw_probs = F.softmax(logits, dim=1).detach().cpu().numpy()[0]
 
@@ -302,17 +253,24 @@ def main():
             if last_probs is None:
                 last_probs = raw_probs.copy()
             else:
-                last_probs = 0.8 * last_probs + 0.2 * raw_probs  # stronger smoothing: 0.9/0.1
+                last_probs = 0.8 * last_probs + 0.2 * raw_probs
 
-            pred = int(np.argmax(last_probs))
-            new_conf = float(last_probs[pred])
+            pred_smooth = int(np.argmax(last_probs))
+            new_conf = float(last_probs[pred_smooth])
+
+            # 2) ensure heatmap explains the SAME class you display
+            pred_now = int(np.argmax(raw_probs))
+            if pred_smooth != pred_now:
+                heat, _ = cam_engine(inp, class_idx=pred_smooth)
+            else:
+                heat = heat0
 
             new_heat = np.squeeze(heat.detach().cpu().numpy())
 
-            last_label = EMOTIONS[pred] if pred < len(EMOTIONS) else f"class_{pred}"
+            last_label = EMOTIONS[pred_smooth]
             last_roi = roi
 
-            # temporal smoothing for confidence + heatmap (keep as-is)
+            # temporal smoothing for confidence + heatmap
             if last_heat is None or np.shape(last_heat) != np.shape(new_heat):
                 last_conf = new_conf
                 last_heat = new_heat
@@ -320,42 +278,42 @@ def main():
                 last_conf = 0.8 * last_conf + 0.2 * new_conf
                 last_heat = 0.8 * last_heat + 0.2 * new_heat
 
-            if frame_idx == args.every_n:
-                print("logits shape:", tuple(logits.shape))
-                print("[gradcam] heat shape:", np.shape(new_heat))
-
         # ---------- Draw output ----------
         vis = frame.copy()
 
         if (not args.no_face) and roi_smooth is None:
-            # no face -> show warning + keep last prediction visible
             vis = draw_text_box(vis, "No face detected (heatmap off)", 10, 30, scale=0.7, thickness=2)
             vis = draw_text_box(vis, f"{last_label} {last_conf:.2f}", 10, 60, scale=0.75, thickness=2)
         else:
-            # draw bbox
             vis = draw_bbox(vis, roi)
 
-            # overlay heatmap (your overlay_heatmap handles resizing to ROI)
-            if last_heat is not None and last_roi != (0, 0, W, H):
-                vis = overlay_heatmap(vis, last_roi, last_heat, alpha=0.35)
+        if last_heat is not None and last_roi != (0, 0, W, H):
+            # fade heatmap when uncertain instead of turning it off
+            a = 0.15 + 0.35 * max(0.0, min(1.0, (last_conf - 0.3) / 0.4))  # ~0.15..0.50
 
-            # main prediction OUTSIDE: above-right of the facebox
+            heat = last_heat.astype(np.float32)
+            heat = cv2.GaussianBlur(heat, (0, 0), sigmaX=2.0)
+            heat = np.clip(heat, 0.0, 1.0)
+            heat = heat ** 0.6
+            vis = overlay_heatmap(vis, last_roi, heat, alpha=float(a))
+
+            # main prediction near the facebox
             x, y, w, h = roi
             main_text = f">{last_label} {last_conf:.2f}"
             vis = draw_text_box(
                 vis,
                 main_text,
-                x + w,             # right edge of box
-                max(20, y - 6),   
+                x + w,
+                max(20, y - 6),
                 anchor="tl",
                 scale=0.85,
                 thickness=2,
                 pad=0
             )
 
-        # scoreboard OUTSIDE: top-left 1–6 lines of the frame
+        # scoreboard
         if last_probs is not None:
-            order = np.argsort(-last_probs)  # best first
+            order = np.argsort(-last_probs)
             sx, sy, dy = 10, 30, 35
             for rank, idx in enumerate(order):
                 line = f"{rank+1}. {EMOTIONS[idx]}: {last_probs[idx]:.2f}"

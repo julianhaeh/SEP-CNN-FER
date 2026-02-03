@@ -1,8 +1,6 @@
 import torch
 import torch.nn.functional as F
 
-import torch
-
 def unwrap_model_output(out, preferred_k=6):
     """
     Pick the tensor that represents class logits.
@@ -25,8 +23,8 @@ def unwrap_model_output(out, preferred_k=6):
     if not t2d:
         return tensors[0] if tensors else out
 
-    # 1) Prefer K == 6
-    for t in t2d:
+    # Prefer the LAST [B,6] tensor (helps wrappers like SCN that return (raw_logits, out))
+    for t in reversed(t2d):
         if t.shape[1] == preferred_k:
             return t
         
@@ -49,15 +47,24 @@ class GradCAM:
         self.gradients = None
 
         def fwd_hook(_, __, output):
-            self.activations = output
+            # IMPORTANT:
+            # output will be modified later by inplace ReLUs, so store a frozen copy
+            self.activations = output.detach().clone()
 
-        def bwd_hook(_, grad_input, grad_output):
-            self.gradients = grad_output[0]
+            # Capture gradients w.r.t. the target layer output
+            def _grad_hook(grad):
+                self.gradients = grad.detach().clone()
+
+            output.register_hook(_grad_hook)
 
         target_layer.register_forward_hook(fwd_hook)
-        target_layer.register_full_backward_hook(bwd_hook)
 
     def __call__(self, x: torch.Tensor, class_idx=None):
+        # clear old state
+        self.activations = None
+        self.gradients = None
+
+        # zero grads
         self.model.zero_grad(set_to_none=True)
 
         out = self.model(x)
@@ -72,8 +79,11 @@ class GradCAM:
         score = logits[:, class_idx]
         score.backward(retain_graph=False)
 
-        A = self.activations
-        dA = self.gradients
+        if self.activations is None or self.gradients is None:
+            raise RuntimeError("GradCAM hooks did not capture activations/gradients. Check target_layer.")
+
+        A = self.activations          # [B,C,h,w]
+        dA = self.gradients           # [B,C,h,w]
 
         weights = dA.mean(dim=(2, 3), keepdim=True)
         cam = (weights * A).sum(dim=1, keepdim=True)
@@ -82,6 +92,12 @@ class GradCAM:
         cam = F.interpolate(cam, size=x.shape[-2:], mode="bilinear", align_corners=False)
         cam = cam.squeeze()
 
-        cam = cam - cam.min()
-        cam = cam / (cam.max() + 1e-8)
+        lo = torch.quantile(cam, 0.10)
+        hi = torch.quantile(cam, 0.99)
+        cam = (cam - lo) / (hi - lo + 1e-8)
+        cam = cam.clamp(0, 1)
+
+        # boost visibility without turning noise into confetti
+        cam = cam.pow(0.5)  # gamma < 1 boosts mid-values (try 0.4–0.8)
+
         return cam.detach(), logits.detach()
