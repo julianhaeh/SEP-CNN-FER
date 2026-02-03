@@ -10,8 +10,10 @@ from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Demo.gradcam import GradCAM
 from Demo.video_utils import largest_face_bbox, overlay_heatmap, draw_bbox
 from Demo.labels import EMOTIONS
+from ultralytics import YOLO
 
 
+yolo_model = YOLO('Demo/yolov8n-face.pt')
 NUM_CLASSES = 6
 
 
@@ -19,7 +21,8 @@ def preprocess(face_bgr):
     """Resize to 64x64 grayscale and convert to tensor [1,1,64,64] in [0,1]."""
     face = cv2.resize(face_bgr, (64, 64), interpolation=cv2.INTER_AREA)
     face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-    x = face.astype(np.float32) / 255.0
+    face = cv2.equalizeHist(face)
+    x = face.astype(np.float32) / 127.5 - 1
     x = torch.from_numpy(x)[None, None, :, :]  # [1,1,64,64]
     return x
 
@@ -137,7 +140,7 @@ def draw_text_box(img, text, x, y, *, scale=0.7, thickness=2, anchor="tl",
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--weights", default=r".\Experiments\Models\VGG13_Original_Unweighted_CE_Acc_72.20.pth", help="VGG13Reduced weights .pth path (state_dict)")
+    ap.add_argument("--weights", default=r".\Experiments\Models\CustomVGG13_Original_Acc_72.30_Model.pth", help="VGG13Reduced weights .pth path (state_dict)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
 
     # webcam
@@ -216,7 +219,7 @@ def main():
 
         # ---------- Face detection + ROI smoothing ----------
         if not args.no_face:
-            bb = largest_face_bbox(frame)
+            bb = largest_face_bbox(frame, yolo_model)
             det_roi = None
 
             if bb is not None:
@@ -265,6 +268,7 @@ def main():
 
         if can_infer:
             inp = preprocess(crop).to(device)
+
             inp.requires_grad_(True)
 
             # 1) run Grad-CAM once (default class = argmax(logits))

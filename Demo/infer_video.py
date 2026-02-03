@@ -18,7 +18,7 @@ def preprocess(face_bgr):
     """Resize to 64x64 grayscale and convert to tensor [1,1,64,64] in [0,1]."""
     face = cv2.resize(face_bgr, (64, 64), interpolation=cv2.INTER_AREA)
     face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-    x = face.astype(np.float32) / 255.0
+    x = face.astype(np.float32) / 127.5 - 1
     x = torch.from_numpy(x)[None, None, :, :]  # [1,1,64,64]
     return x
 

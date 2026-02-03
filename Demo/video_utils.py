@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 
+
 _FACE_CASCADE = None
 
 def _get_face_cascade():
@@ -11,22 +12,29 @@ def _get_face_cascade():
         )
     return _FACE_CASCADE
 
-def largest_face_bbox(frame_bgr):
-    """Returns (x,y,w,h) for largest detected face, or None."""
-    cascade = _get_face_cascade()
-    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-    gray = cv2.equalizeHist(gray)
+def largest_face_bbox(frame_bgr, yolo_model):
+    """
+    Returns (x,y,w,h) for the most confident face detected by YOLO.
+    Input: frame_bgr (numpy array)
+    Output: Tuple of ints (x, y, w, h) (top-left based) or None
+    """
+    
+    # max_det=1 gets us just the single most confident face
+    # verbose=False keeps your console log clean
+    results = yolo_model(frame_bgr, verbose=False, conf=0.5, max_det=1)
 
-    faces = cascade.detectMultiScale(
-        gray,
-        scaleFactor=1.1,
-        minNeighbors=4,
-        minSize=(40, 40)
-)
-    if len(faces) == 0:
+    # Check if a face was actually found
+    if not results or len(results[0].boxes) == 0:
         return None
-    x, y, w, h = max(faces, key=lambda b: b[2] * b[3])
-    return (int(x), int(y), int(w), int(h))
+
+    # Get the box for the first detection
+    box = results[0].boxes[0]
+    
+    # YOLO returns coordinates as floats: x1, y1, x2, y2
+    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+    
+    # Convert to legacy OpenCV format: (x, y, width, height)
+    return (int(x1), int(y1), int(x2 - x1), int(y2 - y1))
 
 
 def draw_label(frame_bgr, text, x=10, y=35):
