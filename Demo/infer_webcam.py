@@ -164,7 +164,7 @@ def main():
     model = load_model(args.weights, device)
 
     # Grad-CAM target layer (keep exactly what you used in video)
-    target_layer = model.features[12]
+    target_layer = model.features[10]
     print("[gradcam] using target layer:", target_layer)
     cam_engine = GradCAM(model, target_layer)
 
@@ -227,7 +227,7 @@ def main():
                 if bb is not None:
                     det_roi = pad_roi(bb, W, H)
 
-            # reject teleport-y false positives
+            # reject jittery false positives
             if det_roi is not None and roi_smooth is not None:
                 if iou_xywh(det_roi, roi_smooth) < args.iou_gate:
                     det_roi = None
@@ -252,11 +252,13 @@ def main():
                 if miss_count > args.max_miss:
                     roi_smooth = None
 
-            roi = roi_smooth if roi_smooth is not None else (0, 0, W, H)
-
-            if (not args.no_face) and (roi_smooth is None):
-                last_heat = None
-                last_roi = (0, 0, W, H)
+            # --- "No face" cleanup ---
+            if roi_smooth is None:
+                roi = (0, 0, W, H)
+                last_heat = None  # Wipes heatmap memory
+                last_roi = (0, 0, W, H) # Reset ROI memory
+            else:
+                roi = roi_smooth
 
         # crop
         x, y, w, h = roi
@@ -336,9 +338,9 @@ def main():
         if (not args.no_face) and roi_smooth is None:
 
             fps_y = H - 10
-            vis = draw_text_box(vis, "No face detected (heatmap off)", 10, fps_y - 70, scale=0.7, thickness=2)
-            vis = draw_text_box(vis, f"{last_label} {last_conf:.2f}", 10, fps_y - 35, scale=0.75, thickness=2)
-
+            vis = draw_text_box(vis, "No face detected (heatmap off)", 10, fps_y - 45, scale=0.7, thickness=2)
+            last_probs = np.zeros(NUM_CLASSES)
+            
         # FPS overlay
         t_now = time.time()
         dt = max(1e-6, t_now - t_prev)
