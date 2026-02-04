@@ -8,6 +8,12 @@ Features:
 - Stream processing with optional recording to repository root.
 """
 
+from Demo.video_utils import (
+    clamp_roi, pad_roi, normalize_bbox, iou_xywh,
+    draw_text_box, draw_bbox,
+    largest_face_bbox, overlay_heatmap
+)
+
 import argparse
 import time
 import cv2
@@ -19,14 +25,10 @@ import torch.nn.functional as F
 # Modules for model architecture, interpretability (Grad-CAM), and helper utilities
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Demo.gradcam import GradCAM
-from Demo.video_utils import largest_face_bbox, overlay_heatmap, draw_bbox
 from Demo.labels import EMOTIONS
 from ultralytics import YOLO
 
-# Initialize YOLOv8 for face detection
-yolo_model = YOLO('Demo/yolov8n-face.pt')
-NUM_CLASSES = 6
-
+NUM_CLASSES = 6 # Must match training/checkpoint output and emotions order
 
 def preprocess(face_bgr):
     """
@@ -44,10 +46,10 @@ def preprocess(face_bgr):
 
 
 def load_model(weights_path: str, device: torch.device):
-    """Initializes architecture and loads pre-trained weights (state_dict)."""
+    """Loads VGG13Reduced checkpoints saved as state_dict."""
     state = torch.load(weights_path, map_location=device)
     if not isinstance(state, dict):
-        raise RuntimeError("Expected a state_dict (dict of tensors) for VGG13Reduced weights.")
+        raise RuntimeError("Expected a state_dict for VGG13Reduced weights.")
 
     model = CustomVGG13Reduced().to(device)
     model.load_state_dict(state, strict=True)
@@ -57,105 +59,6 @@ def load_model(weights_path: str, device: torch.device):
     print("[load] first conv in_channels =", int(first_conv.in_channels))
     print("[load] loaded VGG13Reduced checkpoint")
     return model
-
-
-def clamp_roi(roi, W, H):
-    """Boundary enforcement: keeps the bounding box within the image pixel dimensions."""
-    x, y, w, h = roi
-    x = max(0, min(int(x), W - 1))
-    y = max(0, min(int(y), H - 1))
-    w = max(1, min(int(w), W - x))
-    h = max(1, min(int(h), H - y))
-    return (x, y, w, h)
-
-
-def pad_roi(bb, W, H, pad_x=0.08, pad_top=0.02, pad_bot=0.12):
-    """Adds a contextual margin around the face to improve classification accuracy."""
-    x, y, w, h = map(int, bb)
-    px = int(w * pad_x)
-    pt = int(h * pad_top)
-    pb = int(h * pad_bot)
-    return clamp_roi((x - px, y - pt, w + 2 * px, h + pt + pb), W, H)
-
-
-def normalize_bbox(bb, W, H, min_size=20):
-    """
-    Validates face detections based on size and aspect ratio.
-    Filters out extreme shapes to reduce false-positive detections.
-    """
-    x, y, a, b = map(float, bb)
-
-    # Convert normalized [0,1] coordinates back to pixel values
-    if max(x, y, a, b) <= 1.5:
-        x *= W; a *= W; y *= H; b *= H
-
-    candidates = []
-    candidates.append((x, y, a, b))          # xywh
-    candidates.append((x, y, a - x, b - y))  # xyxy -> xywh
-
-    best = None
-    best_score = -1.0
-
-    for (cx, cy, cw, ch) in candidates:
-        roi = clamp_roi((int(round(cx)), int(round(cy)), int(round(cw)), int(round(ch))), W, H)
-        _, _, w, h = roi
-
-        if w < min_size or h < min_size:
-            continue
-
-        # Aspect ratio scoring: prefers boxes that look like faces
-        area = w * h
-        frac = area / float(W * H + 1e-6)
-        ar = w / float(h + 1e-6)
-
-        # Facial aspect ratio filter
-        if ar < 0.35 or ar > 2.8:
-            continue
-
-        score = area * np.exp(-abs(np.log(ar)))
-        if frac > 0.90:
-            score *= 0.05
-
-        if score > best_score:
-            best_score = score
-            best = roi
-
-    return best
-
-
-def iou_xywh(a, b):
-    """Calculates Intersection over Union to measure overlap between frames."""
-    ax, ay, aw, ah = a
-    bx, by, bw, bh = b
-    ax2, ay2 = ax + aw, ay + ah
-    bx2, by2 = bx + bw, by + bh
-
-    ix1, iy1 = max(ax, bx), max(ay, by)
-    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
-    iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
-
-    inter = iw * ih
-    union = aw * ah + bw * bh - inter + 1e-6
-    return inter / union
-
-
-def draw_text_box(img, text, x, y, *, scale=0.7, thickness=2, anchor="tl",
-                  fg=(255, 255, 255), bg=(0, 0, 0), pad=6):
-    """Renders text with a background box for readability."""
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
-
-    if anchor == "tr":
-        x = x - tw - pad
-
-    # Bounds clamping to prevent text from being drawn outside the window
-    x = int(max(0, min(x, img.shape[1] - tw - 2 * pad)))
-    y = int(max(th + 2 * pad, min(y, img.shape[0] - 2)))
-
-    cv2.rectangle(img, (x, y - th - pad), (x + tw + 2 * pad, y + baseline + pad), bg, -1)
-    cv2.putText(img, text, (x + pad, y), font, scale, fg, thickness, cv2.LINE_AA)
-    return img
-
 
 def main():
     # --- CLI Arguments ---
@@ -175,6 +78,9 @@ def main():
     # --- Setup ---
     device = torch.device(args.device)
     model = load_model(args.weights, device)
+
+    # Initialize YOLOv8 for face detection
+    yolo_model = YOLO('Demo/yolov8n-face.pt')
 
     # Grad-CAM: Points to the last convolutional layer for feature maps
     target_layer = model.features[10]# matches infer_video for consistency
@@ -213,160 +119,154 @@ def main():
 
     print("Demo running. Press 'q' or ESC to quit.")
 
-    while True:
-        ok, frame = cap.read()
-        if not ok: break
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok: break
 
-        if args.flip: frame = cv2.flip(frame, 1)
+            if args.flip: frame = cv2.flip(frame, 1)
 
-        frame_idx += 1
-        roi = (0, 0, W, H)
+            frame_idx += 1
+            roi = (0, 0, W, H)
 
-        # --- 1. Face Detection & Tracking (ROI Smoothing) ---
-        if not args.no_face:
-            bb = largest_face_bbox(frame, yolo_model)
-            det_roi = None
+            # --- 1. Face Detection & Tracking (ROI Smoothing) ---
+            if not args.no_face:
+                bb = largest_face_bbox(frame, yolo_model)
+                det_roi = None
 
-            if bb is not None:
-                bb = normalize_bbox(bb, W, H)
                 if bb is not None:
-                    det_roi = pad_roi(bb, W, H)
+                    bb = normalize_bbox(bb, W, H)
+                    if bb is not None:
+                        det_roi = pad_roi(bb, W, H)
 
-            # Stability: Reject jitter detections using IoU gating
-            if det_roi is not None and roi_smooth is not None:
-                if iou_xywh(det_roi, roi_smooth) < args.iou_gate:
-                    det_roi = None
+                # Stability: Reject jitter detections using IoU gating
+                if det_roi is not None and roi_smooth is not None:
+                    if iou_xywh(det_roi, roi_smooth) < args.iou_gate:
+                        det_roi = None
 
-            # Exponential Moving Average (EMA) for smooth bounding box transitions
-            if det_roi is not None:
-                miss_count = 0
-                if roi_smooth is None:
-                    roi_smooth = det_roi
+                # Exponential Moving Average (EMA) for smooth bounding box transitions
+                if det_roi is not None:
+                    miss_count = 0
+                    if roi_smooth is None:
+                        roi_smooth = det_roi
+                    else:
+                        sx, sy, sw, sh = roi_smooth
+                        dx, dy, dw, dh = det_roi
+                        a = args.roi_alpha
+                        roi_smooth = (
+                            int(a * sx + (1 - a) * dx),
+                            int(a * sy + (1 - a) * dy),
+                            int(a * sw + (1 - a) * dw),
+                            int(a * sh + (1 - a) * dh),
+                        )
+                        roi_smooth = clamp_roi(roi_smooth, W, H)
                 else:
-                    sx, sy, sw, sh = roi_smooth
-                    dx, dy, dw, dh = det_roi
-                    a = args.roi_alpha
-                    roi_smooth = (
-                        int(a * sx + (1 - a) * dx),
-                        int(a * sy + (1 - a) * dy),
-                        int(a * sw + (1 - a) * dw),
-                        int(a * sh + (1 - a) * dh),
-                    )
-                    roi_smooth = clamp_roi(roi_smooth, W, H)
-            else:
-                # Keep tracking current ROI for 'max_miss' frames if detection fails
-                miss_count += 1
-                if miss_count > args.max_miss:
-                    roi_smooth = None
+                    # Keep tracking current ROI for 'max_miss' frames if detection fails
+                    miss_count += 1
+                    if miss_count > args.max_miss:
+                        roi_smooth = None
 
-            # State Cleanup: If tracking is lost, reset visualization memory
-            if roi_smooth is None:
-                roi = (0, 0, W, H)
-                last_heat = None  # Wipes heatmap memory
-                last_roi = (0, 0, W, H) # Reset ROI memory
-            else:
-                roi = roi_smooth
+                # State Cleanup: If tracking is lost, reset visualization memory
+                if roi_smooth is None:
+                    roi = (0, 0, W, H)
+                    last_heat = None  # Wipes heatmap memory
+                    last_roi = (0, 0, W, H) # Reset ROI memory
+                else:
+                    roi = roi_smooth
 
-        # --- 2. Inference & Explainability (Grad-CAM) ---
-        x, y, w, h = roi
-        crop = frame[y:y + h, x:x + w]
-        crop_ok = (crop.size != 0)
-
-        can_infer = crop_ok and (frame_idx % args.every_n == 0) and (args.no_face or roi_smooth is not None)
-
-        if can_infer:
-            inp = preprocess(crop).to(device)
-
-            inp.requires_grad_(True)
-
-            # Generate logits and raw heatmap for the predicted class
-            heat0, logits = cam_engine(inp)
-            raw_probs = F.softmax(logits, dim=1).detach().cpu().numpy()[0]
-
-            # EMA smoothing over time
-            if last_probs is None: last_probs = raw_probs.copy()
-            else: last_probs = 0.8 * last_probs + 0.2 * raw_probs
-
-            pred_smooth = int(np.argmax(last_probs))
-            new_conf = float(last_probs[pred_smooth])
-
-            # EMA for class probabilities to prevent rapid flickering of labels
-            pred_now = int(np.argmax(raw_probs))
-            if pred_smooth != pred_now:
-                heat, _ = cam_engine(inp, class_idx=pred_smooth)
-            else:
-                heat = heat0
-
-            new_heat = np.squeeze(heat.detach().cpu().numpy())
-
-            last_label = EMOTIONS[pred_smooth]
-            last_roi = roi
-
-            # Smooth heatmap and confidence over time for visual stability
-            if last_heat is None or np.shape(last_heat) != np.shape(new_heat):
-                last_conf, last_heat = new_conf, new_heat
-            else:
-                last_conf = 0.8 * last_conf + 0.2 * new_conf
-                last_heat = 0.8 * last_heat + 0.2 * new_heat
-
-        # --- 3. Rendering Output ---
-        vis = frame.copy()
-
-        if args.no_face or roi_smooth is not None:
-            vis = draw_bbox(vis, roi)
-
-        if (roi_smooth is not None) and (last_heat is not None) and (last_roi != (0, 0, W, H)):
-            # Dynamic Alpha: Increase heatmap opacity as model confidence grows
-            a = 0.15 + 0.35 * max(0.0, min(1.0, (last_conf - 0.3) / 0.4))
-
-            # Heatmap Visual Post-processing: 
-            # Converts to float, applies Gaussian blur for a "glow" effect, 
-            # and uses a power transform (0.6) to boost mid-range activation visibility.
-            heat = last_heat.astype(np.float32)
-            heat = cv2.GaussianBlur(heat, (0, 0), sigmaX=2.0)
-            heat = np.clip(heat, 0.0, 1.0)
-            heat = heat ** 0.6
-            vis = overlay_heatmap(vis, last_roi, heat, alpha=float(a))
-
-            # Main Prediction Label: Positioned relative to the face ROI
+            # --- 2. Inference & Explainability (Grad-CAM) ---
             x, y, w, h = roi
-            main_text = f">{last_label} {last_conf:.2f}"
-            vis = draw_text_box(vis, main_text, x + w, max(20, y - 6),
-                                anchor="tl", scale=0.85, thickness=2, pad=0)
+            crop = frame[y:y + h, x:x + w]
+            crop_ok = (crop.size != 0)
 
-        # Scoreboard (Predictions list)
-        if last_probs is not None:
-            order = np.argsort(-last_probs)
-            sx, sy, dy = 10, 30, 35
-            for rank, idx in enumerate(order):
-                line = f"{rank + 1}. {EMOTIONS[idx]}: {last_probs[idx]:.2f}"
-                vis = draw_text_box(vis, line, sx, sy + rank * dy, scale=0.65, thickness=1)
+            can_infer = crop_ok and (frame_idx % args.every_n == 0) and (args.no_face or roi_smooth is not None)
 
-        # Status Update: No face detected
-        if (not args.no_face) and roi_smooth is None:
-            fps_y = H - 10
-            vis = draw_text_box(vis, "No face detected (heatmap off)", 10, fps_y - 45, scale=0.7, thickness=2)
-            last_probs = np.zeros(NUM_CLASSES)
+            if can_infer:
+                inp = preprocess(crop).to(device)
 
-        # FPS overlay
-        t_now = time.time()
-        dt = max(1e-6, t_now - t_prev)
-        fps_inst = 1.0 / dt
-        fps_ema = fps_inst if fps_ema == 0.0 else (0.9 * fps_ema + 0.1 * fps_inst)
-        t_prev = t_now
-        vis = draw_text_box(vis, f"FPS: {fps_ema:.1f}", 10, H - 10, scale=0.7, thickness=2)
+                inp.requires_grad_(True)
 
-        cv2.imshow("FER Webcam Demo", vis)
-        if out is not None: out.write(vis)
+                # Generate logits and raw heatmap for the predicted class
+                heat0, logits = cam_engine(inp)
+                raw_probs = F.softmax(logits, dim=1).detach().cpu().numpy()[0]
 
-        key = cv2.waitKey(1) & 0xFF
-        if key in (ord("q"), 27): break # either with q or ESC
+                # EMA smoothing over time
+                if last_probs is None: last_probs = raw_probs.copy()
+                else: last_probs = 0.8 * last_probs + 0.2 * raw_probs
 
-    cap.release()
-    if out is not None:
-        out.release()
-        print(f"Saved recording: {args.save}")
-    cv2.destroyAllWindows()
+                pred_smooth = int(np.argmax(last_probs))
+                new_conf = float(last_probs[pred_smooth])
+
+                # EMA for class probabilities to prevent rapid flickering of labels
+                pred_now = int(np.argmax(raw_probs))
+                if pred_smooth != pred_now:
+                    heat, _ = cam_engine(inp, class_idx=pred_smooth)
+                else:
+                    heat = heat0
+
+                new_heat = np.squeeze(heat.detach().cpu().numpy())
+
+                last_label = EMOTIONS[pred_smooth]
+                last_roi = roi
+
+                # Smooth heatmap and confidence over time for visual stability
+                if last_heat is None or np.shape(last_heat) != np.shape(new_heat):
+                    last_conf, last_heat = new_conf, new_heat
+                else:
+                    last_conf = 0.8 * last_conf + 0.2 * new_conf
+                    last_heat = 0.8 * last_heat + 0.2 * new_heat
+
+            # --- 3. Rendering Output ---
+            vis = frame.copy()
+
+            if args.no_face or roi_smooth is not None:
+                vis = draw_bbox(vis, roi)
+
+            if (roi_smooth is not None) and (last_heat is not None) and (last_roi != (0, 0, W, H)):
+                # Dynamic Alpha: Increase heatmap opacity as model confidence grows
+                a = 0.15 + 0.35 * max(0.0, min(1.0, (last_conf - 0.3) / 0.4))
+
+                vis = overlay_heatmap(vis, last_roi, last_heat, alpha=float(a))
+
+                # Main Prediction Label: Positioned relative to the face ROI
+                x, y, w, h = roi
+                main_text = f">{last_label} {last_conf:.2f}"
+                vis = draw_text_box(vis, main_text, x + w, max(20, y - 6),
+                                    anchor="tl", scale=0.85, thickness=2, pad=0)
+
+            # Scoreboard (Predictions list)
+            if last_probs is not None:
+                order = np.argsort(-last_probs)
+                sx, sy, dy = 10, 30, 35
+                for rank, idx in enumerate(order):
+                    line = f"{rank + 1}. {EMOTIONS[idx]}: {last_probs[idx]:.2f}"
+                    vis = draw_text_box(vis, line, sx, sy + rank * dy, scale=0.65, thickness=1)
+
+            # Status Update: No face detected and scoreboard reset
+            if (not args.no_face) and roi_smooth is None:
+                fps_y = H - 10
+                vis = draw_text_box(vis, "No face detected", 10, fps_y - 45, scale=0.7, thickness=2)
+                last_probs = np.zeros(NUM_CLASSES, dtype=np.float32)
+
+            # FPS overlay
+            t_now = time.time()
+            dt = max(1e-6, t_now - t_prev)
+            fps_inst = 1.0 / dt
+            fps_ema = fps_inst if fps_ema == 0.0 else (0.9 * fps_ema + 0.1 * fps_inst)
+            t_prev = t_now
+            vis = draw_text_box(vis, f"FPS: {fps_ema:.1f}", 10, H - 10, scale=0.7, thickness=2)
+
+            cv2.imshow("FER Webcam Demo", vis)
+            if out is not None: out.write(vis)
+
+            key = cv2.waitKey(1) & 0xFF
+            if key in (ord("q"), 27): break # either with q or ESC
+    finally:
+        cap.release()
+        if out is not None:
+            out.release()
+            print(f"Saved recording: {args.save}")
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

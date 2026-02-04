@@ -11,6 +11,102 @@ Features:
 import cv2
 import numpy as np
 
+def clamp_roi(roi, W, H):
+    """Boundary enforcement: keeps the bounding box within the image pixel dimensions."""
+    x, y, w, h = roi
+    x = max(0, min(int(x), W - 1))
+    y = max(0, min(int(y), H - 1))
+    w = max(1, min(int(w), W - x))
+    h = max(1, min(int(h), H - y))
+    return (x, y, w, h)
+
+def pad_roi(bb, W, H, pad_x=0.10, pad_top=0.08, pad_bot=0.11):
+    """Adds a contextual margin around the face to improve classification accuracy."""
+    x, y, w, h = map(int, bb)
+    px = int(w * pad_x)
+    pt = int(h * pad_top)
+    pb = int(h * pad_bot)
+    return clamp_roi((x - px, y - pt, w + 2 * px, h + pt + pb), W, H)
+
+def normalize_bbox(bb, W, H, min_size=20): 
+    """
+    Accepts bb as either:
+      - (x, y, w, h) in pixels
+      - (x1, y1, x2, y2) in pixels
+      - normalized variants in [0,1]
+    Returns (x, y, w, h) in pixels or None.
+    """
+    x, y, a, b = map(float, bb)
+
+    # Convert normalized [0,1] coordinates back to pixel values
+    if max(x, y, a, b) <= 1.5:
+        x *= W; a *= W; y *= H; b *= H
+
+    candidates = []
+    candidates.append((x, y, a, b))          # xywh
+    candidates.append((x, y, a - x, b - y))  # xyxy -> xywh
+
+    best = None
+    best_score = -1.0
+
+    for (cx, cy, cw, ch) in candidates:
+        roi = clamp_roi((int(round(cx)), int(round(cy)), int(round(cw)), int(round(ch))), W, H)
+        _, _, w, h = roi
+
+        if w < min_size or h < min_size:
+            continue
+
+        # Aspect ratio scoring: prefers boxes that look like faces
+        area = w * h
+        frac = area / float(W * H + 1e-6)
+        ar = w / float(h + 1e-6)
+
+        # Facial aspect ratio filter
+        if ar < 0.35 or ar > 2.8:
+            continue
+
+        score = area * np.exp(-abs(np.log(ar)))
+        if frac > 0.90:
+            score *= 0.05
+
+        if score > best_score:
+            best_score = score
+            best = roi
+
+    return best
+
+def iou_xywh(a, b):
+    """Calculates Intersection over Union to measure overlap between frames."""
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    ax2, ay2 = ax + aw, ay + ah
+    bx2, by2 = bx + bw, by + bh
+
+    ix1, iy1 = max(ax, bx), max(ay, by)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+
+    inter = iw * ih
+    union = aw * ah + bw * bh - inter + 1e-6
+    return inter / union
+
+def draw_text_box(img, text, x, y, *, scale=0.7, thickness=2, anchor="tl",
+                  fg=(255, 255, 255), bg=(0, 0, 0), pad=6):
+    """Renders text with a background box for readability."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
+
+    if anchor == "tr":
+        x = x - tw - pad
+
+    # Bounds clamping to prevent text from being drawn outside the window
+    x = int(max(0, min(x, img.shape[1] - tw - 2 * pad)))
+    y = int(max(th + 2 * pad, min(y, img.shape[0] - 2)))
+
+    cv2.rectangle(img, (x, y - th - pad), (x + tw + 2 * pad, y + baseline + pad), bg, -1)
+    cv2.putText(img, text, (x + pad, y), font, scale, fg, thickness, cv2.LINE_AA)
+    return img
+
 def largest_face_bbox(frame_bgr, yolo_model):
     """
     Returns (x,y,w,h) for the most confident face detected by YOLO.
@@ -35,6 +131,7 @@ def overlay_heatmap(frame_bgr, roi_xywh, heat_01, alpha=0.55, blur_sigma=4.0, ga
     - Dynamic range to handle varying activation strengths.
     - Gamma correction to emphasize peak 'attention' areas.
     - Applies a soft threshold to suppress low-level noise.
+    - Converts to float, applies Gaussian blur
     """
     x, y, w, h = roi_xywh
     roi = frame_bgr[y:y+h, x:x+w]

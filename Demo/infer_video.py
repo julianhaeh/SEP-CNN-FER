@@ -8,6 +8,12 @@ Features:
 - Place input video in root and run to render emotion detection output video.
 """
 
+from Demo.video_utils import (
+    clamp_roi, pad_roi, normalize_bbox, iou_xywh,
+    draw_text_box, draw_bbox,
+    largest_face_bbox, overlay_heatmap
+)
+
 import argparse
 import cv2
 import numpy as np
@@ -17,7 +23,6 @@ import torch.nn.functional as F
 
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Demo.gradcam import GradCAM
-from Demo.video_utils import largest_face_bbox, overlay_heatmap, draw_bbox
 from Demo.labels import EMOTIONS
 from ultralytics import YOLO
 
@@ -32,7 +37,10 @@ def preprocess(face_bgr):
     """
     face = cv2.resize(face_bgr, (64, 64), interpolation=cv2.INTER_AREA)
     face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+
     # face = cv2.equalizeHist(face) -> commented out for testing different lighing conditions #
+
+    # Scale pixels to range [-1, 1] consistent with training preprocessing
     x = face.astype(np.float32) / 127.5 - 1
     x = torch.from_numpy(x)[None, None, :, :]  # [1,1,64,64]
     return x
@@ -54,70 +62,6 @@ def load_model(weights_path: str, device: torch.device):
     params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"[load] Model trainable parameters: {params:,}")
     return model
-
-def clamp_roi(roi, W, H):
-    x, y, w, h = roi
-    x = max(0, min(int(x), W - 1))
-    y = max(0, min(int(y), H - 1))
-    w = max(1, min(int(w), W - x))
-    h = max(1, min(int(h), H - y))
-    return (x, y, w, h)
-
-def pad_roi(bb, W, H, pad_x=0.10, pad_top=0.08, pad_bot=0.11):
-    x, y, w, h = map(int, bb)
-    px = int(w * pad_x)
-    pt = int(h * pad_top)
-    pb = int(h * pad_bot)
-    return clamp_roi((x - px, y - pt, w + 2 * px, h + pt + pb), W, H)
-
-def normalize_bbox(bb, W, H, min_size=20): 
-    """
-    Accepts bb as either:
-      - (x, y, w, h) in pixels
-      - (x1, y1, x2, y2) in pixels
-      - normalized variants in [0,1]
-    Returns (x, y, w, h) in pixels or None.
-    """
-    x, y, a, b = map(float, bb)
-    if max(x, y, a, b) <= 1.5:
-        x *= W; a *= W; y *= H; b *= H
-
-    candidates = [(x, y, a, b), (x, y, a - x, b - y)]
-    best, best_score = None, -1.0
-
-    for (cx, cy, cw, ch) in candidates:
-        roi = clamp_roi((int(round(cx)), int(round(cy)), int(round(cw)), int(round(ch))), W, H)
-        _, _, w, h = roi
-        if w < min_size or h < min_size: continue
-        ar = w / float(h + 1e-6)
-        if ar < 0.35 or ar > 2.8: continue
-        
-        score = (w * h) * np.exp(-abs(np.log(ar)))
-        if score > best_score:
-            best_score = score
-            best = roi
-    return best
-
-def iou_xywh(a, b):
-    ax, ay, aw, ah = a
-    bx, by, bw, bh = b
-    ix1, iy1 = max(ax, bx), max(ay, by)
-    ix2, iy2 = min(ax + aw, bx + bw), min(ay + ah, by + bh)
-    iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
-    inter = iw * ih
-    union = aw * ah + bw * bh - inter + 1e-6
-    return inter / union
-
-def draw_text_box(img, text, x, y, *, scale=0.7, thickness=2, anchor="tl",
-                  fg=(255, 255, 255), bg=(0, 0, 0), pad=6):
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
-    if anchor == "tr": x = x - tw - pad
-    x = int(max(0, min(x, img.shape[1] - tw - 2 * pad)))
-    y = int(max(th + 2 * pad, min(y, img.shape[0] - 2)))
-    cv2.rectangle(img, (x, y - th - pad), (x + tw + 2 * pad, y + baseline + pad), bg, -1)
-    cv2.putText(img, text, (x + pad, y), font, scale, fg, thickness, cv2.LINE_AA)
-    return img
 
 def main():
     """
@@ -204,7 +148,13 @@ def main():
                     miss_count += 1
                     if miss_count > args.max_miss: roi_smooth = None
 
-                roi = roi_smooth if roi_smooth is not None else (0, 0, W, H)
+                # State Cleanup: If tracking is lost, reset visualization memory
+                if roi_smooth is None:
+                    roi = (0, 0, W, H)
+                    last_heat = None          # wipe heatmap memory
+                    last_roi = (0, 0, W, H)   # reset ROI memory
+                else:
+                    roi = roi_smooth
 
             # --- 2: INFERENCE & EXPLAINABILITY (GRAD-CAM) ---
             x, y, w, h = roi
@@ -239,21 +189,20 @@ def main():
 
             # --- Visual Rendering: Overlaying Bounding Boxes, Heatmaps, and Emotion Rankings ---
             vis = frame.copy()
+
+            # Status Update: No face detected and scoreboard reset
             if (not args.no_face) and roi_smooth is None:
-                vis = draw_text_box(vis, "No face (heatmap off)", 10, 30)
-                vis = draw_text_box(vis, f"{last_label} {last_conf:.2f}", 10, 60)
+                vis = draw_text_box(vis, "No face detected", 10, H - 45, scale=0.7, thickness=2)
+                last_probs = np.zeros(NUM_CLASSES, dtype=np.float32)
+                
             else:
                 vis = draw_bbox(vis, roi)
 
-            if last_heat is not None and last_roi != (0, 0, W, H):
+            if (roi_smooth is not None) and (last_heat is not None) and (last_roi != (0, 0, W, H)):
                 # Dynamic Alpha: Increase heatmap visibility as model confidence grows
                 a = 0.15 + 0.35 * max(0.0, min(1.0, (last_conf - 0.3) / 0.4))
 
-                # Spatial Smoothing: Apply Gaussian blur to the raw heatmap for a polished demo look
-                heat = cv2.GaussianBlur(last_heat.astype(np.float32), (0, 0), 2.0)
-
-                # Gamma Correction: Power-law transform (**0.6) to emphasize high-intensity regions
-                vis = overlay_heatmap(vis, last_roi, np.clip(heat, 0, 1)**0.6, alpha=float(a))
+                vis = overlay_heatmap(vis, last_roi, last_heat, alpha=float(a))
                 vis = draw_text_box(vis, f">{last_label} {last_conf:.2f}", roi[0]+roi[2], max(20, roi[1]-6), scale=0.85)
 
             if last_probs is not None:
