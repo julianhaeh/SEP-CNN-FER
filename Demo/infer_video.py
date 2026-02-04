@@ -5,7 +5,7 @@ Features:
 - YOLOv8-face detection with temporal ROI smoothing for stable tracking.
 - Emotion classification through Custom Reduced VGG13 architecture.
 - Visual explainability using GradCAM heatmaps for model transparency.
-- Input/ copy video to root and run command to render emotion detection output.
+- Place input video in root and run to render emotion detection output video.
 """
 
 import argparse
@@ -17,12 +17,11 @@ import torch.nn.functional as F
 
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Demo.gradcam import GradCAM
-from Demo.gradcam import find_last_conv2d
 from Demo.video_utils import largest_face_bbox, overlay_heatmap, draw_bbox
 from Demo.labels import EMOTIONS
 from ultralytics import YOLO
 
-NUM_CLASSES = 6
+NUM_CLASSES = 6 # Must match training/checkpoint output and emotions order
 
 def preprocess(face_bgr):
     """
@@ -71,7 +70,14 @@ def pad_roi(bb, W, H, pad_x=0.10, pad_top=0.08, pad_bot=0.11):
     pb = int(h * pad_bot)
     return clamp_roi((x - px, y - pt, w + 2 * px, h + pt + pb), W, H)
 
-def normalize_bbox(bb, W, H, min_size=20):
+def normalize_bbox(bb, W, H, min_size=20): 
+    """
+    Accepts bb as either:
+      - (x, y, w, h) in pixels
+      - (x1, y1, x2, y2) in pixels
+      - normalized variants in [0,1]
+    Returns (x, y, w, h) in pixels or None.
+    """
     x, y, a, b = map(float, bb)
     if max(x, y, a, b) <= 1.5:
         x *= W; a *= W; y *= H; b *= H
@@ -125,7 +131,10 @@ def main():
     ap.add_argument("--output", required=True)
     ap.add_argument("--weights", default=r".\Experiments\Models\CustomVGG13_Original_Acc_72.30_Model.pth")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+
+    # Compute Grad-CAM every N frames to keep runtime manageable
     ap.add_argument("--every_n", type=int, default=2)
+
     ap.add_argument("--no_face", action="store_true")
     ap.add_argument("--roi_alpha", type=float, default=0.85)
     ap.add_argument("--iou_gate", type=float, default=0.15)
@@ -135,6 +144,7 @@ def main():
     device = torch.device(args.device)
     model = load_model(args.weights, device)
     
+    # Uses Ultralytics YOLOv8 face detector weights stored in Demo/yolov8n-face.pt
     yolo_model = YOLO('Demo/yolov8n-face.pt')
 
     # TARGET LAYER SELECTION:
@@ -154,108 +164,112 @@ def main():
     out = cv2.VideoWriter(args.output, cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H))
 
     # State Management
-    last_label, last_conf, last_heat, last_probs = "?", 0.0, None, None
-    last_probs = np.zeros(NUM_CLASSES)
+    last_label, last_conf, last_heat = "?", 0.0, None
+    last_probs = np.zeros(NUM_CLASSES, dtype=np.float32)
     last_roi = (0, 0, W, H)
     roi_smooth, miss_count, frame_idx = None, 0, 0
 
-    while True:
-        ok, frame = cap.read()
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok: break
 
-        # --- 1: FACE DETECTION & TRACKING ---
-        if not ok: break
-        frame_idx += 1
-        roi = (0, 0, W, H)
+            # --- 1: FACE DETECTION & TRACKING ---
+            frame_idx += 1
+            roi = (0, 0, W, H)
 
-        # Face detection (YOLO model)
-        if not args.no_face:
-            bb = largest_face_bbox(frame, yolo_model)
-            det_roi = None
-            if bb is not None:
-                bb = normalize_bbox(bb, W, H)
-                if bb is not None: det_roi = pad_roi(bb, W, H)
+            # Face detection (YOLO model)
+            if not args.no_face:
+                # largest_face_bbox(...) may return xywh or xyxy (normalized or pixel).
+                # normalize_bbox standardizes it to pixel xywh (x, y, w, h).
+                bb = largest_face_bbox(frame, yolo_model)
+                det_roi = None
+                if bb is not None:
+                    bb = normalize_bbox(bb, W, H)
+                    if bb is not None: det_roi = pad_roi(bb, W, H)
 
-            if det_roi is not None and roi_smooth is not None:
-                if iou_xywh(det_roi, roi_smooth) < args.iou_gate: det_roi = None
+                if det_roi is not None and roi_smooth is not None:
+                    if iou_xywh(det_roi, roi_smooth) < args.iou_gate: det_roi = None
 
-            if det_roi is not None:
-                miss_count = 0
-                if roi_smooth is None: roi_smooth = det_roi
+                if det_roi is not None:
+                    miss_count = 0
+                    if roi_smooth is None: roi_smooth = det_roi
+                    else:
+                        sx, sy, sw, sh = roi_smooth
+                        dx, dy, dw, dh = det_roi
+                        a = args.roi_alpha
+                        roi_smooth = clamp_roi((int(a*sx+(1-a)*dx), int(a*sy+(1-a)*dy), 
+                                            int(a*sw+(1-a)*dw), int(a*sh+(1-a)*dh)), W, H)
                 else:
-                    sx, sy, sw, sh = roi_smooth
-                    dx, dy, dw, dh = det_roi
-                    a = args.roi_alpha
-                    roi_smooth = clamp_roi((int(a*sx+(1-a)*dx), int(a*sy+(1-a)*dy), 
-                                           int(a*sw+(1-a)*dw), int(a*sh+(1-a)*dh)), W, H)
+                    miss_count += 1
+                    if miss_count > args.max_miss: roi_smooth = None
+
+                roi = roi_smooth if roi_smooth is not None else (0, 0, W, H)
+
+            # --- 2: INFERENCE & EXPLAINABILITY (GRAD-CAM) ---
+            x, y, w, h = roi
+            crop = frame[y:y+h, x:x+w]
+            if crop.size != 0 and (frame_idx % args.every_n == 0) and (args.no_face or roi_smooth is not None):
+                inp = preprocess(crop).to(device)
+                inp.requires_grad_(True)
+                heat0, logits = cam_engine(inp)
+                raw_probs = F.softmax(logits, dim=1).detach().cpu().numpy()[0]
+
+                # --- 3: TEMPORAL SMOOTHING ---
+                # We use an Exponential Moving Average (EMA) to prevent flickering
+                # Apply EMA smoothing to probabilities to stabilize the UI
+                last_probs = 0.8 * last_probs + 0.2 * raw_probs
+
+                pred_smooth = int(np.argmax(last_probs))
+                new_conf = float(last_probs[pred_smooth])
+                
+                # Match heatmap to displayed label
+                if pred_smooth != int(np.argmax(raw_probs)):
+                    heat, _ = cam_engine(inp, class_idx=pred_smooth)
+                else: heat = heat0
+
+                new_heat = np.squeeze(heat.detach().cpu().numpy())
+                last_label, last_roi = EMOTIONS[pred_smooth], roi
+
+                if last_heat is None or last_heat.shape != new_heat.shape:
+                    last_conf, last_heat = new_conf, new_heat
+                else:
+                    last_conf = 0.8 * last_conf + 0.2 * new_conf
+                    last_heat = 0.8 * last_heat + 0.2 * new_heat
+
+            # --- Visual Rendering: Overlaying Bounding Boxes, Heatmaps, and Emotion Rankings ---
+            vis = frame.copy()
+            if (not args.no_face) and roi_smooth is None:
+                vis = draw_text_box(vis, "No face (heatmap off)", 10, 30)
+                vis = draw_text_box(vis, f"{last_label} {last_conf:.2f}", 10, 60)
             else:
-                miss_count += 1
-                if miss_count > args.max_miss: roi_smooth = None
+                vis = draw_bbox(vis, roi)
 
-            roi = roi_smooth if roi_smooth is not None else (0, 0, W, H)
+            if last_heat is not None and last_roi != (0, 0, W, H):
+                # Dynamic Alpha: Increase heatmap visibility as model confidence grows
+                a = 0.15 + 0.35 * max(0.0, min(1.0, (last_conf - 0.3) / 0.4))
 
-        # --- 2: INFERENCE & EXPLAINABILITY (GRAD-CAM) ---
-        x, y, w, h = roi
-        crop = frame[y:y+h, x:x+w]
-        if crop.size != 0 and (frame_idx % args.every_n == 0) and (args.no_face or roi_smooth is not None):
-            inp = preprocess(crop).to(device)
-            inp.requires_grad_(True)
-            heat0, logits = cam_engine(inp)
-            raw_probs = F.softmax(logits, dim=1).detach().cpu().numpy()[0]
+                # Spatial Smoothing: Apply Gaussian blur to the raw heatmap for a polished demo look
+                heat = cv2.GaussianBlur(last_heat.astype(np.float32), (0, 0), 2.0)
 
-            # --- 3: TEMPORAL SMOOTHING ---
-            # We use an Exponential Moving Average (EMA) to prevent flickering
-            # Apply EMA smoothing to probabilities to stabilize the UI
-            last_probs = 0.8 * last_probs + 0.2 * raw_probs
+                # Gamma Correction: Power-law transform (**0.6) to emphasize high-intensity regions
+                vis = overlay_heatmap(vis, last_roi, np.clip(heat, 0, 1)**0.6, alpha=float(a))
+                vis = draw_text_box(vis, f">{last_label} {last_conf:.2f}", roi[0]+roi[2], max(20, roi[1]-6), scale=0.85)
 
-            pred_smooth = int(np.argmax(last_probs))
-            new_conf = float(last_probs[pred_smooth])
-            
-            # Match heatmap to displayed label
-            if pred_smooth != int(np.argmax(raw_probs)):
-                heat, _ = cam_engine(inp, class_idx=pred_smooth)
-            else: heat = heat0
+            if last_probs is not None:
+                for r, i in enumerate(np.argsort(-last_probs)):
+                    vis = draw_text_box(vis, f"{r+1}. {EMOTIONS[i]}: {last_probs[i]:.2f}", 10, 30 + r*35, scale=0.65, thickness=1)
 
-            new_heat = np.squeeze(heat.detach().cpu().numpy())
-            last_label, last_roi = EMOTIONS[pred_smooth], roi
+            out.write(vis)
 
-            if last_heat is None or last_heat.shape != new_heat.shape:
-                last_conf, last_heat = new_conf, new_heat
-            else:
-                last_conf = 0.8 * last_conf + 0.2 * new_conf
-                last_heat = 0.8 * last_heat + 0.2 * new_heat
+    finally:
+        cap.release()
+        out.release()
 
-        # --- Visual Rendering: Overlaying Bounding Boxes, Heatmaps, and Emotion Rankings ---
-        vis = frame.copy()
-        if (not args.no_face) and roi_smooth is None:
-            vis = draw_text_box(vis, "No face (heatmap off)", 10, 30)
-            vis = draw_text_box(vis, f"{last_label} {last_conf:.2f}", 10, 60)
-        else:
-            vis = draw_bbox(vis, roi)
-
-        if last_heat is not None and last_roi != (0, 0, W, H):
-            # Dynamic Alpha: Increase heatmap visibility as model confidence grows
-            a = 0.15 + 0.35 * max(0.0, min(1.0, (last_conf - 0.3) / 0.4))
-
-            # Spatial Smoothing: Apply Gaussian blur to the raw heatmap for a polished demo look
-            heat = cv2.GaussianBlur(last_heat.astype(np.float32), (0, 0), 2.0)
-
-            # Gamma Correction: Power-law transform (**0.6) to emphasize high-intensity regions
-            vis = overlay_heatmap(vis, last_roi, np.clip(heat, 0, 1)**0.6, alpha=float(a))
-            vis = draw_text_box(vis, f">{last_label} {last_conf:.2f}", roi[0]+roi[2], max(20, roi[1]-6), scale=0.85)
-
-        if last_probs is not None:
-            for r, i in enumerate(np.argsort(-last_probs)):
-                vis = draw_text_box(vis, f"{r+1}. {EMOTIONS[i]}: {last_probs[i]:.2f}", 10, 30 + r*35, scale=0.65, thickness=1)
-
-        out.write(vis)
-
-    # --- Final report (input file exported to output file path ...) --- 
-    cap.release()
-    out.release()
-    
+    # --- Final report (input file exported to output file path ...) ---     
     print("\n" + "="*40)
     print(f"COMPLETE")
-    print(f"Output saved in: {args.output}")
+    print(f"Output saved as: {args.output}")
     print("="*40)
 
 if __name__ == "__main__":
