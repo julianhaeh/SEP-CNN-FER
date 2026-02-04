@@ -84,7 +84,8 @@ def main():
 
     # Grad-CAM: Points to the last convolutional layer for feature maps
     target_layer = model.features[10]# matches infer_video for consistency
-    print("[gradcam] using target layer:", target_layer)
+    
+    print(f"[gradcam] Demo Mode: Using layer 10 for demo visualization")
     cam_engine = GradCAM(model, target_layer)
 
     cap = cv2.VideoCapture(args.camera, cv2.CAP_DSHOW if hasattr(cv2, "CAP_DSHOW") else 0)
