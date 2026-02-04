@@ -1,3 +1,13 @@
+"""
+FER Live Inference Pipeline (Webcam)
+
+Features:
+- YOLOv8-face detection with temporal ROI smoothing for stable tracking.
+- Emotion classification through Custom Reduced VGG13 architecture.
+- Visual explainability using GradCAM heatmaps for model transparency.
+- Stream processing with optional recording to repository root.
+"""
+
 import argparse
 import time
 import cv2

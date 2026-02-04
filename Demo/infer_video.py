@@ -1,11 +1,11 @@
 """
-FER Inference Pipeline
+FER Inference Pipeline (Video)
 
 Features:
-- YOLOv8-face detection with temporal ROI smoothing.
-- Emotion classification through Custom Reduced VGG13.
-- Visual explainability using Grad-CAM heatmaps.
-- input video in repository root to output processed emotion detecion
+- YOLOv8-face detection with temporal ROI smoothing for stable tracking.
+- Emotion classification through Custom Reduced VGG13 architecture.
+- Visual explainability using GradCAM heatmaps for model transparency.
+- Input/ copy video to root and run command to render emotion detection output.
 """
 
 import argparse
@@ -51,7 +51,7 @@ def load_model(weights_path: str, device: torch.device):
     first_conv = next(m for m in model.modules() if isinstance(m, nn.Conv2d))
     print("[load] first conv in_channels =", int(first_conv.in_channels))
     print("[load] loaded VGG13Reduced checkpoint")
-    
+
     params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"[load] Model trainable parameters: {params:,}")
     return model
