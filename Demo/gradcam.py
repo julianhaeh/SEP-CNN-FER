@@ -1,16 +1,11 @@
 import torch
 import torch.nn.functional as F
 
-import torch
-
 def unwrap_model_output(out, preferred_k=6):
     """
-    Pick the tensor that represents class logits.
-    Many models return (embedding, logits) or dicts.
-    We prefer a 2D tensor [B,K] where K == preferred_k (6 emotions).
+    Extract logits from common model output formats (Tensor / tuple / dict).
+    Prefers a 2D tensor [B, preferred_k] if available.
     """
-    tensors = []
-
     if torch.is_tensor(out):
         return out
 
@@ -21,18 +16,21 @@ def unwrap_model_output(out, preferred_k=6):
     else:
         return out
 
+    # Keep only 2D tensors
     t2d = [t for t in tensors if t.ndim == 2]
     if not t2d:
         return tensors[0] if tensors else out
 
-    # 1) Prefer K == 6
-    for t in t2d:
+    # Prefer the last [B, preferred_k] tensor
+    for t in reversed(t2d):
         if t.shape[1] == preferred_k:
             return t
-        
+    
+    # Fallback: return the smallest class dimension among available 2D tensors
     return min(t2d, key=lambda t: t.shape[1])
 
 def find_last_conv2d(model: torch.nn.Module):
+    """Optional helper for automatic target layer selection."""
     last = None
     for m in model.modules():
         if isinstance(m, torch.nn.Conv2d):
@@ -49,31 +47,40 @@ class GradCAM:
         self.gradients = None
 
         def fwd_hook(_, __, output):
-            self.activations = output
+            self.activations = output.detach().clone()
 
-        def bwd_hook(_, grad_input, grad_output):
-            self.gradients = grad_output[0]
+            def _grad_hook(grad):
+                self.gradients = grad.detach().clone()
+
+            output.register_hook(_grad_hook)
 
         target_layer.register_forward_hook(fwd_hook)
-        target_layer.register_full_backward_hook(bwd_hook)
 
     def __call__(self, x: torch.Tensor, class_idx=None):
+        # Reset per-call state.
+        self.activations = None
+        self.gradients = None
         self.model.zero_grad(set_to_none=True)
 
-        out = self.model(x)
-        logits = unwrap_model_output(out, preferred_k=6)
+        # Gradcam needs gradients even if inference code is wrapped in no_grad().
+        with torch.enable_grad():
+            out = self.model(x)
+            logits = unwrap_model_output(out, preferred_k=6)
 
-        if logits.ndim != 2:
-            raise RuntimeError(f"Expected logits [B,K], got {tuple(logits.shape)}")
+            if logits.ndim != 2:
+                raise RuntimeError(f"Expected logits [B,K], got {tuple(logits.shape)}")
 
-        if class_idx is None:
-            class_idx = int(torch.argmax(logits, dim=1).item())
+            if class_idx is None:
+                class_idx = int(torch.argmax(logits, dim=1).item())
 
-        score = logits[:, class_idx]
-        score.backward(retain_graph=False)
+            score = logits[:, class_idx].sum()
+            score.backward(retain_graph=False)
 
-        A = self.activations
-        dA = self.gradients
+        if self.activations is None or self.gradients is None:
+            raise RuntimeError("GradCAM hooks did not capture activations/gradients. Check target_layer.")
+
+        A = self.activations          # [B,C,h,w]
+        dA = self.gradients           # [B,C,h,w]
 
         weights = dA.mean(dim=(2, 3), keepdim=True)
         cam = (weights * A).sum(dim=1, keepdim=True)
@@ -82,6 +89,12 @@ class GradCAM:
         cam = F.interpolate(cam, size=x.shape[-2:], mode="bilinear", align_corners=False)
         cam = cam.squeeze()
 
-        cam = cam - cam.min()
-        cam = cam / (cam.max() + 1e-8)
+        # Quantile normalization is more stable than min/max when a few pixels dominate.
+        lo = torch.quantile(cam, 0.10)
+        hi = torch.quantile(cam, 0.99)
+        cam = (cam - lo) / (hi - lo + 1e-8)
+        cam = cam.clamp(0, 1)
+
+        cam = cam.pow(0.3)  # Gamma < 1 boosts mid-values
+
         return cam.detach(), logits.detach()
