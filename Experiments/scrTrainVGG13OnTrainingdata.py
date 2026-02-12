@@ -13,6 +13,7 @@ import torch.nn.init as init
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Data.clsOurDataset import OurDataset
 from ModelArchitectures.clsDownsizedCustomVGG13Reduced import DownsizedCustomVGG13Reduced
+from ModelArchitectures.clsReducedClassifierCusomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
 
 # --- PARAMETERS ---
 EPOCHS = 75
@@ -21,7 +22,6 @@ BATCH_SIZE = 32
 # Load Datasets
 trainDataLoader = DataLoader(OurDataset(split='train'), batch_size=BATCH_SIZE, shuffle=True)
 valDataLoader = DataLoader(OurDataset(split='test'), batch_size=BATCH_SIZE, shuffle=False)
-
 EMOTION_DICT = {0: "Angry", 1: "Disgust", 2: "Fear", 3: "Happy", 4: "Sad", 5: "Surprise"}
 CLASS_NAMES = [val for key, val in sorted(EMOTION_DICT.items())]
 
@@ -31,11 +31,11 @@ CLASS_WEIGHTS = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
 # --- CONFIGURATIONS ---
 LOSS_CONFIGS = [
     ("Weighted_CE", True),
-    ("Unweighted_CE", False)
+#    ("Unweighted_CE", False)
 ]
 
 USE_PRETRAINED = None # Set to None to train from scratch, otherwise will load weights from the path
-USE_ORIGINAL_VGG13 = False  # If True, uses the original CustomVGG13Reduced architecture, if false uses the downsized one
+USE_ORIGINAL_VGG13 = False # If True, uses the original CustomVGG13Reduced architecture, if false uses the downsized one
 
 # --- HELPER FUNCTIONS ---
 
@@ -47,6 +47,9 @@ def weights_init(m):
             init.constant_(m.bias, 0)
     elif isinstance(m, nn.Linear):
         init.normal_(m.weight, 0, 0.01)
+        init.constant_(m.bias, 0)
+    elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
+        init.constant_(m.weight, 1)
         init.constant_(m.bias, 0)
 
 
@@ -148,15 +151,29 @@ def train_evaluate_pipeline(model, criterion, optimizer, scheduler, epochs=55):
            
         if scheduler is not None:
             scheduler.step()
-        loss_history.append(running_loss / len(trainDataLoader))
-        
+
+        train_loss = running_loss / len(trainDataLoader)
+        loss_history.append(train_loss)
+
         # Validation
-        y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
-        correct = torch.sum(y_true == y_pred).item()
-        total = y_true.size(0)
+        model.eval()
+        val_loss = 0.0
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for batch in valDataLoader:
+                imgs_val = batch['image'].to(device)
+                targets_val = batch['label'].to(device)
+                outputs_val = model(imgs_val)
+                val_loss += criterion(outputs_val, targets_val).item()
+                _, preds = torch.max(outputs_val, 1)
+                correct += (preds == targets_val).sum().item()
+                total += targets_val.size(0)
+
+        val_loss /= len(valDataLoader)
         accuracy = correct / total * 100
-        
-        print(f"   [Epoch {epoch+1} Test Accuracy: {accuracy:.2f}%]")
+
+        print(f"   [Epoch {epoch+1} Train Loss: {train_loss:.4f} | Test Loss: {val_loss:.4f} | Test Accuracy: {accuracy:.2f}%]")
         accuracy_history.append(accuracy)
 
     return loss_history, accuracy_history
@@ -182,8 +199,8 @@ def run_experiments():
             model = CustomVGG13Reduced() 
             model_name = "Original"
         else:
-            model = DownsizedCustomVGG13Reduced()
-            model_name = "Downsized"
+            model = ReducedClassifierCustomVGG13Reduced()
+            model_name = "ReducedClassifier"
         model.apply(weights_init) 
 
         print(f"   [Model Initialized: {model_name}]")
@@ -195,11 +212,18 @@ def run_experiments():
         # 2. INIT LOSS
         if use_weighted:
             criterion = nn.CrossEntropyLoss(weight=CLASS_WEIGHTS.to(device))
+            loss_name += "_Weighted"
+            print(f"   [Using Weighted Cross-Entropy Loss]")
         else:
             criterion = nn.CrossEntropyLoss()
+            loss_name += "_Unweighted"
+            print(f"   [Using Unweighted Cross-Entropy Loss]")
 
-        # 3. INIT OPTIMIZER & SCHEDULER (SGD with fixed hyperparameters)
-        optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
+        # 3. INIT OPTIMIZER & SCHEDULER (Different hyperparameters for original vs reduced VGG13)
+        if(USE_ORIGINAL_VGG13):
+            optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
+        else:
+            optimizer = optim.SGD(model.parameters(), lr=0.005, momentum=0.9, weight_decay=0.0079)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
         
         # 4. TRAIN
@@ -216,12 +240,16 @@ def run_experiments():
         final_acc = a_hist[-1]
         print(f"\n   [Final Test Accuracy for {loss_name}: {final_acc:.2f}%]")
         
-        cm_filename = f"Experiments/Plots/ConfMatrix_{loss_name}.png"
-        plot_confusion_matrix(cm_tensor.numpy(), CLASS_NAMES, 
-                              f"Confusion Matrix: {loss_name}", 
+        cm_filename = f"Experiments/Plots/ConfMatrix_VGG13_{model_name}_{loss_name}.png"
+        plot_confusion_matrix(cm_tensor.numpy(), CLASS_NAMES,
+                              f"Confusion Matrix: VGG13 {model_name}",
                               cm_filename)
-        
-        torch.save(model.state_dict(), f"Experiments/Models/CustomVGG13_{model_name}_Acc_{final_acc:.2f}_Model.pth")
+
+        # 6. SAVE MODEL
+        os.makedirs("Experiments/Models", exist_ok=True)
+        save_filename = f"Experiments/Models/{model_name}_{loss_name}_Acc_{final_acc:.2f}_Model.pth"
+        torch.save(model.state_dict(), save_filename)
+        print(f"   [Model saved to {save_filename}]")
 
     # --- Generate combined comparison plots ---
     print(f"\n=========================================")

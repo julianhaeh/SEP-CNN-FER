@@ -10,9 +10,8 @@ INPUT_SHAPE = (1, 64, 64)  # Hardcoded input shape for our data
 
 class DownsizedCustomVGG13Reduced(nn.Module):
     """
-    A reduced version of the custom VGG13 architecture introduced in the paper "Training Deep Networks for Facial Expression Recognition
-    with Crowd-Sourced Label Distribution", designed for smaller datasets and lower computational resources".
-    The existing architecture is reduced to have less parameters, so it will not overfit on our rather small dataset and adjusted to our number of classes.
+    A downsized version of the custom VGG13 architecture. This version was determined by tunning on the test data; however, this yielded the proble of
+    overoptimization and therefore we tuned again on the validation set, and found that the reduced classifier version of the original architecture was better.
     """
     
     def __init__(self):

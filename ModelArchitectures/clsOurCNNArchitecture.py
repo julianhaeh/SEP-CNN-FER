@@ -128,3 +128,163 @@ class OurCNN(nn.Module):
         x = self.pool(x)
         x = self.head(x)
         return x
+    
+class CNN_GAP_3Blocks(nn.Module):
+    def __init__(self, num_classes=6):
+        super(CNN_GAP_3Blocks, self).__init__()
+        
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            nn.Dropout2d(0.25),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+
+            nn.Dropout2d(0.25),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            nn.Conv2d(128, 196, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(196),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(196, 196, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(196),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(196, 196, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(196),
+            nn.ReLU(inplace=True),
+
+            nn.Dropout2d(0.25),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+
+        self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.classifier = nn.Linear(196, num_classes)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.global_avg_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
+
+class CNN_GAP_4Blocks(nn.Module):
+    def __init__(self, num_classes=6):
+        super(CNN_GAP_4Blocks, self).__init__()
+
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            nn.Dropout2d(0.25),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+
+            nn.Dropout2d(0.25),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            nn.Conv2d(128, 196, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(196),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(196, 196, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(196),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(196, 196, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(196),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(196, 196, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(196),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(196, 196, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(196),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(196, 196, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(196),
+            nn.ReLU(inplace=True),
+
+            nn.Dropout2d(0.25),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+
+        self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.classifier = nn.Linear(196, num_classes)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.global_avg_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
+
+class CNN_GAP_2Blocks(nn.Module):
+    def __init__(self, num_classes=6):
+        super(CNN_GAP_2Blocks, self).__init__()
+
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            nn.Dropout2d(0.25),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+
+            nn.Dropout2d(0.25),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+        )
+        
+        self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+        
+        self.classifier = nn.Linear(128, num_classes)
+    
+    def forward(self, x):
+        x = self.features(x)
+        x = self.global_avg_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x

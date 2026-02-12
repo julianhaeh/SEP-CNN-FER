@@ -8,17 +8,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import random
-import optuna  # <--- NEW: The Bayesian Optimization Library
+import optuna  
 from torch.optim import lr_scheduler
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
+from ModelArchitectures.clsCustomVGG13ReducedBatchnorm import CustomVGG13ReducedBatchnorm
+from ModelArchitectures.clsOurCNNArchitecture import CNN_GAP_3Blocks
 from Data.clsOurDatasetTuning import OurDatasetTuning
-from torchvision.transforms import v2
 import torch.nn.init as init
 
 # --- CONFIGURATION ---
-N_TRIALS = 70         
-EPOCHS_PER_TRIAL = 15  
-BATCH_SIZE = 32        
+MODEL = CNN_GAP_3Blocks # Set the model architecture to tune (e.g. CustomVGG13Reduced, CustomVGG13ReducedBatchnorm, CNN_GAP_3Blocks)
+N_TRIALS = 70
+EPOCHS_PER_TRIAL = 15
+BATCH_SIZE = 32
 SEED = 42
 
 # Global weights 
@@ -76,12 +78,12 @@ def objective(trial):
     set_seed(SEED) # Reset seed so every trial starts from same weights/batch order
     
     # Load Data (Re-init to ensure clean state)
-    trainDataLoader = DataLoader(OurDatasetTuning(split='train'),
+    trainDataLoader = DataLoader(OurDatasetTuning(section='training', split='train'),
                                  batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
-    valDataLoader = DataLoader(OurDatasetTuning(split='valid'), 
+    valDataLoader = DataLoader(OurDatasetTuning(section='training', split='valid'), 
                                batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
 
-    model = CustomVGG13Reduced().to(device)
+    model = MODEL().to(device)
     model.apply(weights_init)  # Initialize weights
     
     # Initialize Optimizer with TRIAL parameters

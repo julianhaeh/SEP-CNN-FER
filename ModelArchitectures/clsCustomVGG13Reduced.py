@@ -1,6 +1,6 @@
 """
 This file defines a CustomVGG13 architecture, as it was introcuded in the paper "Training Deep Networks for Facial Expression Recognition
-with Crowd-Sourced Label Distribution" by Barsoum et al. 2016. We chose this architecture since it has only around 7.7 million parameters, 
+with Crowd-Sourced Label Distribution" by Barsoum et al. 2016. We chose this architecture since it has only around 8.7 million parameters, 
 which is small enough to be train on our rather small dataset without overfitting too much, while still being a deep architecture. 
 """
 import torch
@@ -12,7 +12,6 @@ class CustomVGG13Reduced(nn.Module):
     """
     A reduced version of the custom VGG13 architecture introduced in the paper "Training Deep Networks for Facial Expression Recognition
     with Crowd-Sourced Label Distribution", designed for smaller datasets and lower computational resources".
-    The existing architecture is reduced to have less parameters, so it will not overfit on our rather small dataset and adjusted to our number of classes.
     """
     
     def __init__(self):
@@ -40,7 +39,7 @@ class CustomVGG13Reduced(nn.Module):
             nn.Dropout2d(p=0.25),
 
             # Block 3
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),   
             nn.ReLU(inplace=True),
             nn.Conv2d(256, 256, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),

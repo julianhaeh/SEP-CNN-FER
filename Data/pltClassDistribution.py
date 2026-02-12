@@ -5,13 +5,14 @@ This script generates and saves a histogram plot showing the class distribution 
 import matplotlib.pyplot as plt
 from clsOurDataset import OurDataset
 from torch.utils.data import DataLoader
-from clsOurDatasetTuning import OurDatasetTuning
+from Data.clsOurDatasetTuning import OurDatasetTuning
 import numpy as np
 import os
 from tqdm import tqdm
 
 DATASET = 'all'
-SPLIT = 'valid'
+SPLIT = 'all'
+TITLE = f"Class Distribution for our dataset"
 
 # Ensure the output directory exists
 os.makedirs("Data/Plots", exist_ok=True)
@@ -25,7 +26,7 @@ label_map = {
     5: 'Surprise'
 }
 
-dataLoader = DataLoader(OurDatasetTuning(split=SPLIT, dataset=DATASET), batch_size=256)
+dataLoader = DataLoader(OurDataset(split=SPLIT, dataset=DATASET), batch_size=256)
 
 histogram_counts = np.zeros(6, dtype=int)
 
@@ -66,6 +67,7 @@ ax.set_ylabel("Number of Samples", fontsize=12)
 ax.set_xlabel("Emotion Class", fontsize=12)
 ax.grid(axis='y', linestyle='--', alpha=0.7)
 
+plt.suptitle(TITLE, fontsize=16)
 plt.tight_layout()
 
 filename = f"Data/Plots/class_distribution_{DATASET}_{SPLIT}_histogram.png"

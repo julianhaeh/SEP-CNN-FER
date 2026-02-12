@@ -1,14 +1,14 @@
 """
 This file defines the OurDatasetTuning class, which downloads and preprocesses the AffectNet and FER2013 datasets from HuggingFace. 
-It can either load one of the datasets or a combined version of both. The preprocessing includes resizing images to 64x64 pixels, 
-filtering unwanted classes, remapping the labels to a common format, shuffeling the dataset and normalizing the images to [-1, 1].
-With the split argument the desired split can be chosen (train, test or all).
+This dataset defined the tuning splits for our work, there are two different splits accesed by the section argument. The split 
+for tuning the optimizers, the optimizers hyperparameters, the loss function and the data agumentation is accessed by section='training',
+this corresponds to the training section of our paper. It used the first 15% of training data as validation set. The other split is accessed  
+by section='architecture', this split is used for hyperparamter tuning of the architectures and uses the last 15% of the training data 
+as validation set. 
 """
 import numpy as np
 from datasets import load_dataset, concatenate_datasets, ClassLabel
 from PIL import Image
-import torch
-import torch
 from torchvision import transforms
 from torch.utils.data import Dataset
 from torchvision.transforms import v2
@@ -58,7 +58,7 @@ class OurDatasetTuning(Dataset):
     The dataset class for this project. Downloads the dataset from HuggingFace. 
     """
 
-    def __init__(self, dataset = 'all', split = 'train', custom_transform=None):
+    def __init__(self, section, dataset = 'all', split = 'train', custom_transform=None):
         """
         dataset = 'all', 'affectnet' or 'fer2013' 
         split = 'train', 'test', 'valid' or 'all'
@@ -78,17 +78,9 @@ class OurDatasetTuning(Dataset):
     
         if(dataset == 'all'):
 
-            if split == 'train' or split == 'valid':
-                affectnetDs = load_dataset("Mauregato/affectnet_short", split='train')
-                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid')
-            elif split == 'test':
-                affectnetDs = load_dataset("Mauregato/affectnet_short", split='val')
-                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='test')
-            elif split == 'all':
-                affectnetDs = load_dataset("Mauregato/affectnet_short", split='train+val')
-                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid+test')
-            else: 
-                raise ValueError("Split must be 'train', 'test' or 'all'.")
+            affectnetDs = load_dataset("Mauregato/affectnet_short", split='train')
+            fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid')
+
 
             
             print("Processing AffectNet " + split + "...")
@@ -110,114 +102,48 @@ class OurDatasetTuning(Dataset):
             new_label_feature = ClassLabel(names=['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise'])
             affectnetDs = affectnetDs.cast_column('label', new_label_feature)
             fer2013Ds = fer2013Ds.cast_column('label', new_label_feature)
+
+            # The fixed shuffle seed here is really important, since this ensures we have two different validation sets
+            # for the training and the architecture part. The idx determines where to split the data into train in valid.
+            # This index is determined by the section argument and changes for Training Validation Set or Architecture Validation Set.
         
             combined_ds = concatenate_datasets([affectnetDs, fer2013Ds])
             shuffled_ds = combined_ds.shuffle(SHUFFLE_SEED)
-            
-            if split == 'train' or split == 'valid':
+            labels = np.array(shuffled_ds['label'])
+            images = np.array(shuffled_ds['image'])
 
-                # Since the Shuffle seed is fixed, the split will be the same across different runs
+            # We have two 
+            if section == 'training':
 
-                shuffled_ds= shuffled_ds.train_test_split(test_size=0.1, seed=SHUFFLE_SEED)
+                idx = int(0.15 * len(shuffled_ds)) # Take the first 15% of the shuffled dataset as validation for the training part
+
                 if split == 'train':
 
-                    self.label = np.array(shuffled_ds['train']['label'])
-                    self.image = np.array(shuffled_ds['train']['image'])
+                    self.label = labels[idx:]
+                    self.image = images[idx:]
+                    self.original_label = labels[idx:]
+
                 elif split == 'valid':
 
-                    self.label = np.array(shuffled_ds['test']['label'])
-                    self.image = np.array(shuffled_ds['test']['image'])
-            elif split == 'all':
+                    self.label = labels[:idx]
+                    self.image = images[:idx]
+                    self.original_label = labels[:idx]
 
+            elif section == 'architecture':
 
-                self.label = np.array(shuffled_ds['label'])
-                self.image = np.array(shuffled_ds['image'])
-
-            elif split == 'test':
-
-                raise ValueError("Split must be 'train', 'valid' or 'all' for tuning data.")
-        
-        elif(dataset == 'affectnet'):
-
-            if split == 'train':
-                affectnetDs = load_dataset("Mauregato/affectnet_short", split='train')
-            elif split == 'test':
-                affectnetDs = load_dataset("Mauregato/affectnet_short", split='val')
-            elif split == 'all':
-                affectnetDs = load_dataset("Mauregato/affectnet_short", split='train+val')
-            else: 
-                raise ValueError("Split must be 'train', 'test' or 'all'.")
-            
-            print("Processing AffectNet " + split + "...")
-            affectnetDs = affectnetDs.map(
-                process_and_filter, 
-                batched=True, 
-                batch_size=1000, 
-                remove_columns=["label", "image"]
-            )
-
-            new_label_feature = ClassLabel(names=['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise'])
-            affectnetDs = affectnetDs.cast_column('label', new_label_feature)
-        
-            shuffled_ds = affectnetDs.shuffle(SHUFFLE_SEED)
-            
-            if split == 'train' or split == 'valid':
-
-                # Since the Shuffle seed is fixed, the split will be the same across different runs
-                shuffled_ds= shuffled_ds.train_test_split(test_size=0.1, seed=SHUFFLE_SEED)
+                idx = int(0.85 * len(shuffled_ds)) # Take the last 15% of the shuffled dataset as validation for the architecture part
+                
                 if split == 'train':
-                    self.label = np.array(shuffled_ds['train']['label'])
-                    self.image = np.array(shuffled_ds['train']['image'])
+
+                    self.label = labels[:idx]
+                    self.image = images[:idx]
+                    self.original_label = labels[:idx]
 
                 elif split == 'valid':
-                    self.label = np.array(shuffled_ds['test']['label'])
-                    self.image = np.array(shuffled_ds['test']['image'])
 
-
-            elif split == 'test':
-
-                raise ValueError("Split must be 'train', 'valid' or 'all' for tuning data.")
-
-        elif(dataset == 'fer2013'):
-
-            if split == 'train':
-                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid')
-            elif split == 'test':
-                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='test')
-            elif split == 'all':
-                fer2013Ds = load_dataset("AutumnQiu/fer2013", split='train+valid+test')
-            else: 
-                raise ValueError("Split must be 'train', 'test' or 'all'.")
-            
-            print("Processing FER2013 " + split + "...")
-            fer2013Ds = fer2013Ds.map(
-                process_fer, 
-                batched=True, 
-                batch_size=1000, 
-                remove_columns=["label", "image"]
-            )
-
-            new_label_feature = ClassLabel(names=['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise'])
-            fer2013Ds = fer2013Ds.cast_column('label', new_label_feature)
-        
-            shuffled_ds = fer2013Ds.shuffle(SHUFFLE_SEED)
-            
-            if split == 'train' or split == 'valid':
-
-                # Since the Shuffle seed is fixed, the split will be the same across different runs
-
-                shuffled_ds= shuffled_ds.train_test_split(test_size=0.1, seed=SHUFFLE_SEED)
-                if split == 'train':
-                    self.label = np.array(shuffled_ds['train']['label'])
-                    self.image = np.array(shuffled_ds['train']['image'])
-                elif split == 'valid':
-                    self.label = np.array(shuffled_ds['test']['label'])
-                    self.image = np.array(shuffled_ds['test']['image'])
-            elif split == 'test':
-
-                raise ValueError("Split must be 'train', 'valid' or 'all' for tuning data.")
-        else: 
-            raise ValueError("Dataset must be 'all', 'affectnet' or 'fer2013'.")
+                    self.label = labels[idx:]
+                    self.image = images[idx:]
+                    self.original_label = labels[idx:]
             
 
     def __getitem__(self, idx):

@@ -10,9 +10,10 @@ The SCN wrapper class is used in the experiment script pltSCNLoss.py.
 """
 
 import torch.nn as nn
+import torch
 from torch.nn import init
 
-from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
+from ModelArchitectures.clsDownsizedCustomVGG13Reduced import DownsizedCustomVGG13Reduced
 
 NUM_CLASSES = 6  # Number of emotion classes
 
@@ -38,19 +39,22 @@ class SCN_VGG_Wrapper(nn.Module):
         
         # New classifier
         self.classifier = nn.Sequential(
-            nn.Linear(256 * 4 * 4, 1024),
+            nn.Linear(192 * 8 * 8, 512),  # Assuming input images are 64x64
+            nn.BatchNorm1d(512),  # Added BatchNorm
             nn.ReLU(inplace=True),
             nn.Dropout(p=0.5),
-            nn.Linear(1024, 1024),
+            nn.Linear(512, 512),
+            nn.BatchNorm1d(512),  # Added BatchNorm
             nn.ReLU(inplace=True),
             nn.Dropout(p=0.5),
-            nn.Linear(1024, NUM_CLASSES)
+            nn.Linear(512, 6)
         )
 
         # SCN Module
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        alpha_in_dim = 256
+        alpha_in_dim = 192
         self.alpha = nn.Sequential(
+            nn.Dropout(p=0.25),
             nn.Linear(alpha_in_dim, 1),
             nn.Sigmoid()
         )
@@ -79,6 +83,12 @@ class SCN_VGG_Wrapper(nn.Module):
         return attention_weights, raw_logits, out
     
 if __name__ == "__main__":
-    base_model = CustomVGG13Reduced()
+    base_model = DownsizedCustomVGG13Reduced()
     model = SCN_VGG_Wrapper(base_model)
     print("Total parameters", sum(p.numel() for p in model.parameters()))
+
+    testSamples = torch.randn(4, 1, 64, 64)  # Batch of 4 grayscale 64x64 images
+    att_weights, raw_logits, out = model(testSamples)
+    print("Attention weights shape:", att_weights.shape)
+    print("Raw logits shape:", raw_logits.shape)
+    print("Output shape:", out.shape)

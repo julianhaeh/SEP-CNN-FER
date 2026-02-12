@@ -21,18 +21,18 @@ import numpy as np
 import os
 import itertools
 
-from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
+from ModelArchitectures.clsDownsizedCustomVGG13Reduced import DownsizedCustomVGG13Reduced
 from Data.clsOurDatasetSCN import OurDatasetSCN
 from ModelArchitectures.clsSCNWrapperOfVGG13 import SCN_VGG_Wrapper
 
 # --- EXPERIMENT CONSTANTS ---
 EPOCHS = 30
 BATCH_SIZE = 64
-USE_SCHEDULER = True
-RELABEL_EPOCH = 10
+USE_SCHEDULER = False
+RELABEL_EPOCH = 15
 
 # --- DEBUG CONSTANTS ---
-RELABELING_ENABLED = True  # Set to True to enable relabeling
+RELABELING_ENABLED = True # Set to True to enable relabeling
 PAPER_RELABELING = True  # Set to True to use the relabeling logic as described in the paper
 DEBUG_BATCH_PLOT = True  # Set to True to enable batch plotting
 PLOT_EPOCHS = [1, 10, 25, 30]  # Epochs to plot (1-indexed)
@@ -46,15 +46,14 @@ CLASS_NAMES = [val for key, val in sorted(EMOTION_DICT.items())]
 
 # Global Class Weights (for Weighted CE)
 CLASS_WEIGHTS_TENSOR = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
-
 # --- CONFIGURATIONS ---
 # 1. Hyperparameter Configs
 HYPERPARAM_CONFIGS = {
     "Tuned": {
-        "BETA": 0.7200,
-        "MARGIN_1": 0.2800,
-        "MARGIN_2": 0.4600,
-        "GAMMA": 0.2200
+        "BETA": 0.75,
+        "MARGIN_1": 0.6,
+        "MARGIN_2": 0.85,
+        "GAMMA": 0.25
     },
      "Original": {
         "BETA": 0.7,
@@ -66,8 +65,8 @@ HYPERPARAM_CONFIGS = {
 
 # 2. Loss Configs (Loss_name, use_weighted, path_pretrained_model)
 LOSS_CONFIGS = [
-    ("Unweighted CE", False, "Experiments/Models/VGG13_Original_Unweighted_CE_Acc_72.20.pth"),
-    ("Weighted CE", True, "Experiments/Models/VGG13_Original_Unweighted_CE_Acc_72.20.pth")
+    ("Unweighted CE", False, "Experiments/Models/CustomVGG13_Downsized_Acc_72.51_Model.pth"),
+    ("Weighted CE", True, "Experiments/Models/CustomVGG13_Downsized_Acc_72.51_Model.pth")
 ]
 
 # --- HELPER FUNCTIONS ---
@@ -100,6 +99,26 @@ def plot_attention_weights_vs_loss(all_attention_weights, y_true, y_logits, expe
     plt.grid(axis='y', alpha=0.75)
     
     filename = os.path.join("Experiments/Plots", f"Attention_Weights_{experiment_title.replace(' ', '_')}.png")
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Attention weight distribution plot saved: {filename}")
+
+def plot_attention_weight_distribution(all_attention_weights, experiment_title):
+    # Convert to numpy
+    if isinstance(all_attention_weights, torch.Tensor):
+        att_weights_np = all_attention_weights.numpy()
+    else:
+        att_weights_np = np.array(all_attention_weights)
+
+    plt.figure(figsize=(8, 6))
+    plt.hist(att_weights_np, bins=30, color='blue', alpha=0.7)
+    plt.title(f"Attention Weight Distribution")
+    plt.xlabel("Attention Weight (α)", fontsize=12)
+    plt.ylabel("Frequency", fontsize=12)
+    plt.grid(axis='y', alpha=0.75)
+    
+    filename = os.path.join("Experiments/Plots", f"Attention_Weight_Distribution_{experiment_title.replace(' ', '_')}.png")
     plt.savefig(filename, dpi=150, bbox_inches='tight')
     plt.close()
     
@@ -178,7 +197,7 @@ def plot_relabeling_comparison(dataset, relabeled_mask, config_name, save_dir="E
         
         # Set title with both labels
         ax.set_title(f"Original: {original_name}\nRelabeled: {current_name}", 
-                     fontsize=22, fontweight='bold', color='red')
+                     fontsize=27, fontweight='bold', color='red')
         
         # Add red border to indicate relabeling
         for spine in ax.spines.values():
@@ -399,12 +418,13 @@ def plot_batch_debug(imgs, labels, attention_weights, outputs, epoch, batch_idx,
 
 
 
-def get_all_predictions_torch(model, loader, device):
+def get_all_predictions_torch(model, loader, device, criterion):
     model.eval()
     all_preds = torch.tensor([], dtype=torch.long)
     all_labels = torch.tensor([], dtype=torch.long)
     all_attention_weights = torch.tensor([])
     all_raw_logits = torch.tensor([])
+    test_loss = 0.0
     with torch.no_grad():
         for batch in loader:
             inputs = batch['image'].to(device)
@@ -416,7 +436,11 @@ def get_all_predictions_torch(model, loader, device):
             all_labels = torch.cat((all_labels, labels.cpu()))
             all_attention_weights = torch.cat((all_attention_weights, attention_weights.cpu()))
             all_raw_logits = torch.cat((all_raw_logits, raw_logits.cpu()))
-    return all_raw_logits, all_attention_weights, all_labels, all_preds
+            loss = criterion(logits, labels)
+            test_loss += loss.item() * inputs.size(0)
+        test_loss = test_loss / len(loader.dataset)
+            
+    return all_raw_logits, all_attention_weights, all_labels, all_preds, test_loss
 
 def compute_confusion_matrix_torch(true_labels, pred_labels, num_classes=6):
     indices = true_labels * num_classes + pred_labels
@@ -476,14 +500,13 @@ def train_evaluate_pipeline(hp_config, use_weighted_loss, path_pretrained_model,
     valDataLoader = DataLoader(OurDatasetSCN(split='test'), batch_size=BATCH_SIZE, shuffle=False)
     
     # 3. Initialize Model & Weights
-    base_model = CustomVGG13Reduced()
+    base_model = DownsizedCustomVGG13Reduced()
     base_model.load_state_dict(torch.load(path_pretrained_model, map_location='cpu'))
     model = SCN_VGG_Wrapper(base_model)
     model.to(device)
     
-    # 4. Initialize Optimizer (Fixed SGD)
-    # optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    # 4. Initialize Optimizer 
+    optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
     
     scheduler = None
     if USE_SCHEDULER:
@@ -617,17 +640,18 @@ def train_evaluate_pipeline(hp_config, use_weighted_loss, path_pretrained_model,
         loss_history.append(running_loss / len(trainDataLoader))
         
         # Validation Loop for Accuracy History
-        all_raw_logits, all_attention_weights, y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
+        all_raw_logits, all_attention_weights, y_true, y_pred, test_loss = get_all_predictions_torch(model, valDataLoader, device, criterion)
         correct = torch.sum(y_true == y_pred).item()
         total = y_true.size(0)
         epoch_acc = correct / total * 100
         acc_history.append(epoch_acc)
         
+        print(f"   [Epoch {epoch+1} Test Loss: {test_loss:.4f}]")
         print(f"   [Epoch {epoch+1} Test Acc: {epoch_acc:.2f}%]")
         print(f"  [Epoch {epoch+1}] Training Loss: {loss_history[-1]:.4f}")
 
     # Get final predictions for Confusion Matrix
-    all_raw_logits, all_attention_weights, y_true_final, y_pred_final = get_all_predictions_torch(model, valDataLoader, device)
+    all_raw_logits, all_attention_weights, y_true_final, y_pred_final, test_loss = get_all_predictions_torch(model, valDataLoader, device, criterion)
     
     return loss_history, acc_history, y_true_final, y_pred_final, all_attention_weights, all_raw_logits, trainDataLoader
 
@@ -706,6 +730,9 @@ def run_experiments():
 
             # 5. Plot Attention Weight vs CE-loss without attention
             plot_attention_weights_vs_loss(all_attention_weights, y_true, all_raw_logits, experiment_title)
+
+            # 6. Plot Attention Weight Distribution
+            plot_attention_weight_distribution(all_attention_weights, experiment_title)
 
 
 if __name__ == "__main__":
