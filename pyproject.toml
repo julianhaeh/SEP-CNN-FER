@@ -7,4 +7,4 @@ name = "sep_cnn_fer"
 version = "0.1.0"
 
 [tool.setuptools]
-packages = ["Data", "ModelArchitectures", "Experiments"]
+packages = ["Data", "ModelArchitectures", "Experiments", "ExplainableAI"]

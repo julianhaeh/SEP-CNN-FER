@@ -5,7 +5,6 @@ from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from Data.clsOurDatasetSCN import OurDatasetSCN
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
