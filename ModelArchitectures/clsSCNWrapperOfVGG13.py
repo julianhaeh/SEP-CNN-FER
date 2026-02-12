@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch
 from torch.nn import init
 
-from ModelArchitectures.clsDownsizedCustomVGG13Reduced import DownsizedCustomVGG13Reduced
+from ModelArchitectures.clsDownsizedCustomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
 
 NUM_CLASSES = 6  # Number of emotion classes
 
@@ -39,20 +39,16 @@ class SCN_VGG_Wrapper(nn.Module):
         
         # New classifier
         self.classifier = nn.Sequential(
-            nn.Linear(192 * 8 * 8, 512),  # Assuming input images are 64x64
-            nn.BatchNorm1d(512),  # Added BatchNorm
+            nn.Linear(256 * 4 * 4, 1024),  # Assuming input images are 64x64
+            nn.BatchNorm1d(1024),
             nn.ReLU(inplace=True),
             nn.Dropout(p=0.5),
-            nn.Linear(512, 512),
-            nn.BatchNorm1d(512),  # Added BatchNorm
-            nn.ReLU(inplace=True),
-            nn.Dropout(p=0.5),
-            nn.Linear(512, 6)
+            nn.Linear(1024, 6)
         )
 
         # SCN Module
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        alpha_in_dim = 192
+        alpha_in_dim = 256
         self.alpha = nn.Sequential(
             nn.Dropout(p=0.25),
             nn.Linear(alpha_in_dim, 1),
@@ -83,7 +79,7 @@ class SCN_VGG_Wrapper(nn.Module):
         return attention_weights, raw_logits, out
     
 if __name__ == "__main__":
-    base_model = DownsizedCustomVGG13Reduced()
+    base_model = ReducedClassifierCustomVGG13Reduced()
     model = SCN_VGG_Wrapper(base_model)
     print("Total parameters", sum(p.numel() for p in model.parameters()))
 

@@ -177,7 +177,7 @@ class OurDataset(Dataset):
 
         img_tensor = self.tensor(img)
    
-        if self.split == 'train':
+        if self.split == 'train' or self.split == 'all':
             img_tensor = self.TrainTransform(img_tensor)
 
         

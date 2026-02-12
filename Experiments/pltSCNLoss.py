@@ -21,7 +21,7 @@ import numpy as np
 import os
 import itertools
 
-from ModelArchitectures.clsDownsizedCustomVGG13Reduced import DownsizedCustomVGG13Reduced
+from ModelArchitectures.clsReducedClassifierCusomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
 from Data.clsOurDatasetSCN import OurDatasetSCN
 from ModelArchitectures.clsSCNWrapperOfVGG13 import SCN_VGG_Wrapper
 
@@ -65,8 +65,8 @@ HYPERPARAM_CONFIGS = {
 
 # 2. Loss Configs (Loss_name, use_weighted, path_pretrained_model)
 LOSS_CONFIGS = [
-    ("Unweighted CE", False, "Experiments/Models/CustomVGG13_Downsized_Acc_72.51_Model.pth"),
-    ("Weighted CE", True, "Experiments/Models/CustomVGG13_Downsized_Acc_72.51_Model.pth")
+    ("Unweighted CE", False, "Experiments/Models/ReducedClassifier_Weighted_CE_Weighted_Acc_72.84_Model.pth"),
+    ("Weighted CE", True, "Experiments/Models/ReducedClassifier_Weighted_CE_Weighted_Acc_72.84_Model.pth")
 ]
 
 # --- HELPER FUNCTIONS ---
@@ -500,7 +500,7 @@ def train_evaluate_pipeline(hp_config, use_weighted_loss, path_pretrained_model,
     valDataLoader = DataLoader(OurDatasetSCN(split='test'), batch_size=BATCH_SIZE, shuffle=False)
     
     # 3. Initialize Model & Weights
-    base_model = DownsizedCustomVGG13Reduced()
+    base_model = ReducedClassifierCustomVGG13Reduced()
     base_model.load_state_dict(torch.load(path_pretrained_model, map_location='cpu'))
     model = SCN_VGG_Wrapper(base_model)
     model.to(device)
