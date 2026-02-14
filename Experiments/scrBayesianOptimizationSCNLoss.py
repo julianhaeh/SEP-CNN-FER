@@ -12,9 +12,8 @@ import os
 import optuna
 
 # --- USER IMPORTS ---
-# Assuming these are available in your directory structure
-from ModelArchitectures.clsDownsizedCustomVGG13Reduced import DownsizedCustomVGG13Reduced
-from Data.clsOurDatasetSCN import OurDatasetTuning
+from ModelArchitectures.clsReducedClassifierCustomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
+from Data.clsOurDatasetTuning import OurDatasetTuning
 from ModelArchitectures.clsSCNWrapperOfVGG13 import SCN_VGG_Wrapper
 
 # --- CONSTANTS ---
@@ -29,7 +28,7 @@ PAPER_RELABELING = True  # Set to True to use the relabeling logic as described 
 
 CLASS_WEIGHTS = torch.tensor([1.00, 1.00, 1.00, 1.00, 1.00, 1.00])
 # CLASS_WEIGHTS = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
-PRETRAINED_WEIGHTS_PATH = "Experiments/Models/CustomVGG13_Downsized_Acc_72.51_Model.pth"
+PRETRAINED_WEIGHTS_PATH = "Experiments/Models/ReducedClassifier_Weighted_CE_Weighted_Acc_72.84_Model.pth"
 
 
 # Weight Intit for SGD, this stops gradient explosion or vanishing gradient
@@ -90,17 +89,16 @@ def objective(trial):
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
     
     # Validation loader can be reused (read-only), but defining here for safety
-    val_loader = DataLoader(OurDatasetTuning(section='architecture', split='test'), batch_size=BATCH_SIZE, shuffle=False)
+    val_loader = DataLoader(OurDatasetTuning(section='architecture', split='valid'), batch_size=BATCH_SIZE, shuffle=False)
     # Init Model
-    base_model = DownsizedCustomVGG13Reduced()
+    base_model = ReducedClassifierCustomVGG13Reduced()
     
     base_model.load_state_dict(torch.load(PRETRAINED_WEIGHTS_PATH, map_location='cpu'))
     model = SCN_VGG_Wrapper(base_model)
     model.to(device)
     
     # Init Optimizer 
-    # optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = optim.SGD(model.parameters(), lr=0.005, momentum=0.9, weight_decay=0.0079)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
     criterion = nn.CrossEntropyLoss()
 

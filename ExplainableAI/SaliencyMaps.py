@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from Data.clsOurDatasetSCN import OurDatasetSCN
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader

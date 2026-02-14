@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch
 from torch.nn import init
 
-from ModelArchitectures.clsDownsizedCustomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
+from ModelArchitectures.clsReducedClassifierCustomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
 
 NUM_CLASSES = 6  # Number of emotion classes
 

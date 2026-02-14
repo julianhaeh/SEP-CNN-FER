@@ -8,7 +8,7 @@ import os
 import torch.nn.init as init
 
 # --- CUSTOM IMPORTS ---
-from ModelArchitectures.clsReducedClassifierCusomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
+from ModelArchitectures.clsReducedClassifierCustomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
 from Data.clsOurDataset import OurDataset
 
 # --- PARAMETERS ---

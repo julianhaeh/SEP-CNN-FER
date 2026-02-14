@@ -162,8 +162,8 @@ class OurDatasetTuning(Dataset):
 
         img_tensor = self.normalize(img_tensor)
         
-        return {"image" : img_tensor, "label" : label}
-    
+        return {"image" : img_tensor, "label" : label, 'index': idx, 'original_label': self.original_label[idx]}
+
     def __len__(self):
  
         return len(self.label)

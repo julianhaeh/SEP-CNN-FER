@@ -21,14 +21,14 @@ import numpy as np
 import os
 import itertools
 
-from ModelArchitectures.clsReducedClassifierCusomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
+from ModelArchitectures.clsReducedClassifierCustomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
 from Data.clsOurDatasetSCN import OurDatasetSCN
 from ModelArchitectures.clsSCNWrapperOfVGG13 import SCN_VGG_Wrapper
 
 # --- EXPERIMENT CONSTANTS ---
 EPOCHS = 30
 BATCH_SIZE = 64
-USE_SCHEDULER = False
+USE_SCHEDULER = True
 RELABEL_EPOCH = 15
 
 # --- DEBUG CONSTANTS ---

@@ -13,11 +13,12 @@ import torch.nn.init as init
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Data.clsOurDataset import OurDataset
 from ModelArchitectures.clsDownsizedCustomVGG13Reduced import DownsizedCustomVGG13Reduced
-from ModelArchitectures.clsReducedClassifierCusomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
+from ModelArchitectures.clsReducedClassifierCustomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
 
 # --- PARAMETERS ---
-EPOCHS = 75
+EPOCHS = 55
 BATCH_SIZE = 32
+NUM_RUNS = 3
 
 # Load Datasets
 trainDataLoader = DataLoader(OurDataset(split='train'), batch_size=BATCH_SIZE, shuffle=True)
@@ -31,11 +32,11 @@ CLASS_WEIGHTS = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
 # --- CONFIGURATIONS ---
 LOSS_CONFIGS = [
     ("Weighted_CE", True),
-#    ("Unweighted_CE", False)
+    #("Unweighted_CE", False)
 ]
 
 USE_PRETRAINED = None # Set to None to train from scratch, otherwise will load weights from the path
-USE_ORIGINAL_VGG13 = False # If True, uses the original CustomVGG13Reduced architecture, if false uses the downsized one
+USE_ORIGINAL_VGG13 = True # If True, uses the original CustomVGG13Reduced architecture, if false uses the downsized one
 
 # --- HELPER FUNCTIONS ---
 
@@ -180,88 +181,106 @@ def train_evaluate_pipeline(model, criterion, optimizer, scheduler, epochs=55):
 
 
 def run_experiments():
-    print("Starting Experiments...")
+    print(f"Starting Experiments ({NUM_RUNS} runs)...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs("Experiments/Plots", exist_ok=True)
-
-    # Dictionaries to store history for both loss configurations
-    combined_loss_history = {}
-    combined_accuracy_history = {}
 
     # Loop over loss configurations
     for loss_name, use_weighted in LOSS_CONFIGS:
         print(f"\n=========================================")
         print(f" Training with: {loss_name}")
         print(f"=========================================")
-        
-        # 1. INIT ARCHITECTURE
+
         if USE_ORIGINAL_VGG13:
-            model = CustomVGG13Reduced() 
             model_name = "Original"
         else:
-            model = ReducedClassifierCustomVGG13Reduced()
             model_name = "ReducedClassifier"
-        model.apply(weights_init) 
 
-        print(f"   [Model Initialized: {model_name}]")
+        # Collect metrics across runs
+        all_loss_histories = []
+        all_accuracy_histories = []
+        all_final_accuracies = []
 
-        if USE_PRETRAINED is not None:
-            model.load_state_dict(torch.load(USE_PRETRAINED, map_location=device))
-            print(f"   [Loaded Pretrained Weights from {USE_PRETRAINED}]") 
+        for run in range(NUM_RUNS):
+            print(f"\n--- Run {run+1}/{NUM_RUNS} ---")
 
-        # 2. INIT LOSS
-        if use_weighted:
-            criterion = nn.CrossEntropyLoss(weight=CLASS_WEIGHTS.to(device))
-            loss_name += "_Weighted"
-            print(f"   [Using Weighted Cross-Entropy Loss]")
-        else:
-            criterion = nn.CrossEntropyLoss()
-            loss_name += "_Unweighted"
-            print(f"   [Using Unweighted Cross-Entropy Loss]")
+            # 1. INIT ARCHITECTURE
+            if USE_ORIGINAL_VGG13:
+                model = CustomVGG13Reduced()
+            else:
+                model = ReducedClassifierCustomVGG13Reduced()
+            model.apply(weights_init)
 
-        # 3. INIT OPTIMIZER & SCHEDULER (Different hyperparameters for original vs reduced VGG13)
-        if(USE_ORIGINAL_VGG13):
-            optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
-        else:
-            optimizer = optim.SGD(model.parameters(), lr=0.005, momentum=0.9, weight_decay=0.0079)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
-        
-        # 4. TRAIN
-        l_hist, a_hist = train_evaluate_pipeline(model, criterion, optimizer, scheduler, epochs=EPOCHS)
-        
-        # Store history for combined plotting
-        combined_loss_history[loss_name] = l_hist
-        combined_accuracy_history[loss_name] = a_hist
+            print(f"   [Model Initialized: {model_name}]")
 
-        # 5. CONFUSION MATRIX
+            if USE_PRETRAINED is not None:
+                model.load_state_dict(torch.load(USE_PRETRAINED, map_location=device))
+                print(f"   [Loaded Pretrained Weights from {USE_PRETRAINED}]")
+
+            # 2. INIT LOSS
+            if use_weighted:
+                criterion = nn.CrossEntropyLoss(weight=CLASS_WEIGHTS.to(device))
+            else:
+                criterion = nn.CrossEntropyLoss()
+
+            # 3. INIT OPTIMIZER & SCHEDULER (Different hyperparameters for original vs reduced VGG13)
+            if(USE_ORIGINAL_VGG13):
+                optimizer = optim.SGD(model.parameters(), lr=0.014, momentum=0.9, weight_decay=2.2e-4)
+            else:
+                optimizer = optim.SGD(model.parameters(), lr=0.005, momentum=0.9, weight_decay=0.0079)
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+
+            # 4. TRAIN
+            l_hist, a_hist = train_evaluate_pipeline(model, criterion, optimizer, scheduler, epochs=EPOCHS)
+
+            all_loss_histories.append(l_hist)
+            all_accuracy_histories.append(a_hist)
+            all_final_accuracies.append(a_hist[-1])
+
+            print(f"   [Run {run+1} Final Test Accuracy: {a_hist[-1]:.2f}%]")
+
+        # --- Compute averaged metrics ---
+        avg_loss_history = np.mean(all_loss_histories, axis=0).tolist()
+        avg_accuracy_history = np.mean(all_accuracy_histories, axis=0).tolist()
+        avg_final_acc = np.mean(all_final_accuracies)
+        std_final_acc = np.std(all_final_accuracies)
+
+        loss_suffix = "_Weighted" if use_weighted else "_Unweighted"
+        full_loss_name = loss_name + loss_suffix
+
+        print(f"\n=========================================")
+        print(f" Results for {full_loss_name} ({NUM_RUNS} runs)")
+        print(f"=========================================")
+        print(f"   Individual Final Accuracies: {[f'{a:.2f}%' for a in all_final_accuracies]}")
+        print(f"   Average Final Test Accuracy: {avg_final_acc:.2f}% +/- {std_final_acc:.2f}%")
+
+        # 5. CONFUSION MATRIX (from last run)
         y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
         cm_tensor = compute_confusion_matrix_torch(y_true, y_pred, num_classes=6)
-        
-        final_acc = a_hist[-1]
-        print(f"\n   [Final Test Accuracy for {loss_name}: {final_acc:.2f}%]")
-        
-        cm_filename = f"Experiments/Plots/ConfMatrix_VGG13_{model_name}_{loss_name}.png"
+
+        cm_filename = f"Experiments/Plots/ConfMatrix_VGG13_{model_name}_{full_loss_name}.png"
         plot_confusion_matrix(cm_tensor.numpy(), CLASS_NAMES,
                               f"Confusion Matrix: VGG13 {model_name}",
                               cm_filename)
 
-        # 6. SAVE MODEL
+        # 6. SAVE MODEL (last run)
         os.makedirs("Experiments/Models", exist_ok=True)
-        save_filename = f"Experiments/Models/{model_name}_{loss_name}_Acc_{final_acc:.2f}_Model.pth"
+        save_filename = f"Experiments/Models/{model_name}_{full_loss_name}_AvgAcc_{avg_final_acc:.2f}_Model.pth"
         torch.save(model.state_dict(), save_filename)
         print(f"   [Model saved to {save_filename}]")
 
-    # --- Generate combined comparison plots ---
-    print(f"\n=========================================")
-    print(f" Generating Comparison Plots...")
-    print(f"=========================================")
-    
-    loss_plot_path = f"Experiments/Plots/VGG13_{model_name}_Comparison_Loss.png"
-    plot_metric_comparison(combined_loss_history, "Training Loss", loss_plot_path)
+        # 7. PLOT AVERAGED METRICS
+        plot_metric_comparison(
+            {f"{full_loss_name} (avg {NUM_RUNS} runs)": avg_loss_history},
+            "Training Loss",
+            f"Experiments/Plots/VGG13_{model_name}_{full_loss_name}_Avg_Loss.png"
+        )
+        plot_metric_comparison(
+            {f"{full_loss_name} (avg {NUM_RUNS} runs)": avg_accuracy_history},
+            "Test Accuracy",
+            f"Experiments/Plots/VGG13_{model_name}_{full_loss_name}_Avg_Accuracy.png"
+        )
 
-    acc_plot_path = f"Experiments/Plots/VGG13_{model_name}_Comparison_Accuracy.png"
-    plot_metric_comparison(combined_accuracy_history, "Test Accuracy", acc_plot_path)
-    
     print("\nExperiments completed.")
 
 
