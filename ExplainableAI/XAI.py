@@ -3,20 +3,29 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
-import sys
-import os
 from Data.clsOurDatasetSCN import OurDatasetSCN
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 import numpy as np
-from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
+import random
 from Data.clsOurDataset import OurDataset
 from sklearn.decomposition import PCA
+from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from ModelArchitectures.clsDownsizedCustomVGG13Reduced import DownsizedCustomVGG13Reduced
 from ModelArchitectures.clsMobileFaceNet import MobileFacenet
+from ModelArchitectures.clsGAP_4_64_96_128_196 import GAP_4_64_96_128_196
+from ModelArchitectures.clsReducedClassifierCustomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
 from ExplainableAI.GradCAM import OurGradCAM
 from ExplainableAI.SaliencyMaps import OurSaliencyMaps
 from ExplainableAI.FeatureMaps import OurFeatureMaps
+class ClassificationHead(nn.Module):
+    def __init__(self, embedding_dim=128, num_classes=6):
+        super().__init__()
+        self.weight = nn.Parameter(torch.randn(num_classes, embedding_dim))
+        self.bias = nn.Parameter(torch.zeros(num_classes))
+
+    def forward(self, x):
+        return F.linear(x, self.weight, self.bias)
 # 0 = Angry / 1 = Disgust / 2 = Fear / 3 = Happy / 4 = Sad / 5 = Surprise
 dataset = OurDataset(split='test')
 sample = [dataset[i+20] for i in range(20)]
@@ -24,29 +33,95 @@ images = [s["image"].unsqueeze(0) for s in sample]
 labels = [s["label"] for s in sample]
 img = images[1]
 label = labels[1]
-
-model1 = CustomVGG13Reduced()
+def get_random_images(label = None, amount = 10):
+    count = random.randint(0, 1000)
+    random_data = []
+    i = 0
+    if label is None:
+        while (i<amount):
+            random_data.append(dataset[i+count])
+            i+=1
+    else:
+        while (i<amount):
+            if (dataset[count + i]["label"] == label):
+                random_data.append(dataset[i+count])
+                i+=1
+            else:
+                count +=1
+    random_images = [s["image"].unsqueeze(0) for s in random_data]
+    random_labels = [s["label"] for s in random_data]
+    random_images_and_labels = (random_images, random_labels)
+    return random_images_and_labels
+Original = CustomVGG13Reduced()
 weights1 = torch.load("Experiments/Models/VGG13_Weighted_CE_Acc_72.30_Model.pth", map_location=torch.device('cpu'))
-model1.load_state_dict(weights1)
+Original.load_state_dict(weights1)
 # print(weights1.keys())
 # print(model1)
 
-model2 = DownsizedCustomVGG13Reduced()
+Downsized = DownsizedCustomVGG13Reduced()
 weights2 = torch.load("Experiments/Models/CustomVGG13_Downsized_Acc_72.51_Model.pth", map_location=torch.device('cpu'))
-model2.load_state_dict(weights2)
-model2.eval()
+Downsized.load_state_dict(weights2)
+Downsized.eval()
 #print(model2)
 # print(weights2.keys())
 
+ReducedClassifier = ReducedClassifierCustomVGG13Reduced()
+weights4 = torch.load("Experiments/Models/ReducedClassifier_Weighted_CE_Weighted_Acc_72.84_Model.pth", map_location=torch.device('cpu'))
+ReducedClassifier.load_state_dict(weights4)
+ReducedClassifier.eval()
+print(ReducedClassifier)
+print(weights4.keys)
 
-test_model = model2
+GAP = GAP_4_64_96_128_196()
+weights4 = torch.load("Experiments/Models/GAP_4_64_96_128_196_Weighted_CE_Weighted_Acc_72.10_Model.pth", map_location=torch.device('cpu'))
+GAP.load_state_dict(weights4)
+GAP.eval()
+
+MobileFacenet = MobileFacenet()
+weights5 = torch.load("mobilefacenet_20260201_123158.pth", map_location=torch.device('cpu'))
+modelweights = weights5["model_state_dict"]
+headweights = weights5["head_state_dict"]
+MobileFacenet.load_state_dict(modelweights)
+MobileFacenet.eval()
+head = ClassificationHead(128, 6)
+head.load_state_dict(headweights)
+head.eval()
+
+# print("Original: ", Original)
+# print("Downsized: ", Downsized)
+# print("ReducedClassifier: ", ReducedClassifier)
+# print("MobileFacenet: ", MobileFacenet)
+# print("GAP: ", GAP)
+with torch.no_grad():
+    emb = MobileFacenet(img)
+    output = head(emb)
+print("Prediction: ", F.softmax(output, dim = 1))
+print(label)
+
+test_model = ReducedClassifier
+
+with torch.no_grad():
+    output = test_model(img)
+print("Prediction: ", F.softmax(output, dim = 1))
+print(label)
+
 TestGradCAM = OurGradCAM(test_model)
+imgs, lbls = get_random_images(label = 5, amount=20)
+TestGradCAM.GradCAMmany(imgs, 7)
+TestGradCAM.GradCAMmany(imgs, 8)
+TestGradCAM.GradCAMmany(imgs, 9)
+"""
+TestFeatureMaps = OurFeatureMaps(test_model)
+TestFeatureMaps.FeatureMaps(imgs[0], 8)
+TestFeatureMaps.get_topk_feature_maps(imgs[0], test_model.features[27], k = 16, metric = "max")
+TestFeatureMaps.FeatureMaps(imgs[0], 9)
+TestFeatureMaps.get_topk_feature_maps(imgs[0], test_model.features[30], k = 16, metric = "max")
+
 TestGradCAM.GradCAM(img)
 TestSaliencyMaps = OurSaliencyMaps(test_model)
 TestSaliencyMaps.SaliencyMap(img)
-TestFeatureMaps = OurFeatureMaps(test_model)
-TestFeatureMaps.FeatureMaps(img, 8)
-"""
+
+
 with torch.no_grad():
     output = test_model(img)
 print("Prediction: ", F.softmax(output, dim = 1))
