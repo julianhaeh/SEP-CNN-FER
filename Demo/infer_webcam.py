@@ -38,7 +38,6 @@ def preprocess(face_bgr):
     """
     face = cv2.resize(face_bgr, (64, 64), interpolation=cv2.INTER_AREA)
     face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-    face = cv2.equalizeHist(face)
     # Scale pixels to range [-1, 1] consistent with training preprocessing
     x = face.astype(np.float32) / 127.5 - 1
     x = torch.from_numpy(x)[None, None, :, :]  # [1,1,64,64]
@@ -63,7 +62,7 @@ def load_model(weights_path: str, device: torch.device):
 def main():
     # --- CLI Arguments ---
     ap = argparse.ArgumentParser()
-    ap.add_argument("--weights", default=r".\Experiments\Models\ReducedClassifier_Weighted_CE_Weighted_Acc_72.84_Model.pth")
+    ap.add_argument("--weights", default=r".\Experiments\Models\ReducedClassifier_Weighted_CE_EntireData.pth")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--camera", type=int, default=0, help="camera index (0 is default)")
     ap.add_argument("--flip", action="store_true", help="mirror webcam horizontally")
