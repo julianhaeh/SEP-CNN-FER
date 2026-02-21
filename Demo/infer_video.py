@@ -73,7 +73,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
     ap.add_argument("--output", required=True)
-    ap.add_argument("--weights", default=r".\Experiments\Models\ReducedClassifier_Weighted_CE_Weighted_Acc_72.84_Model.pth")
+    ap.add_argument("--weights", default=r".\Experiments\Models\ReducedClassifier_Weighted_CE_EntireData.pth")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
 
     # Compute Grad-CAM every N frames to keep runtime manageable
