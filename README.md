@@ -5,15 +5,42 @@ In this project we train a Convolutional Neural Network on a FER task from scrat
 
 How to Setup: 
 
+
+    1. Clone the repository
+
+        git clone https://github.com/julianhaeh/SEP-CNN-FER
+
     1. Setup a new virtual enviorment: 
 
+        conda create -n "SEP-CNN-FER" python=3.12.0
+        conda activate "SEP-CNN-FER"
 
+    2. Install the dependencies:
 
-    2. Install the project in editable mode (This allows us to import the files as all other pip modules):
+        We will use pip to install the dependencies:
+        conda install pip
+
+        Install your pytorch version (See https://pytorch.org):
+        Example: pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+
+        Install the rest of the dependencies:
+        pip install grad-cam
+        pip install matplotlib
+        pip install numpy ??
+        pip install optuna
+        pip install scikit-learn ??
+        pip install ultralytics
+        pip install datasets
+
+    3. Install the project in editable mode (This allows us to import the files as all other pip modules):
 
         pip install -e .
 
-    3. Install the dependencies:
+    
+
+  
+        
+        
 
 
     No Data needs to be downloaded in advance, as it is loaded from HuggingFace. 
