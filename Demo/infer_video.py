@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
+from ModelArchitectures.clsReducedClassifierCustomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
 from Demo.gradcam import GradCAM
 from Demo.labels import EMOTIONS
 from ultralytics import YOLO
@@ -51,7 +51,7 @@ def load_model(weights_path: str, device: torch.device):
     if not isinstance(state, dict):
         raise RuntimeError("Expected a state_dict for VGG13Reduced weights.")
 
-    model = CustomVGG13Reduced().to(device)
+    model = ReducedClassifierCustomVGG13Reduced().to(device)
     model.load_state_dict(state, strict=True)
     model.eval()
 
@@ -73,7 +73,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
     ap.add_argument("--output", required=True)
-    ap.add_argument("--weights", default=r".\Experiments\Models\CustomVGG13_Original_Acc_72.30_Model.pth")
+    ap.add_argument("--weights", default=r".\Experiments\Models\ReducedClassifier_Weighted_CE_Weighted_Acc_72.84_Model.pth")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
 
     # Compute Grad-CAM every N frames to keep runtime manageable
