@@ -42,6 +42,6 @@ How to Setup:
         pip install -e .
 
 
-    No Data needs to be downloaded in advance, as it is loaded from HuggingFace. 
+    No Data needs to be downloaded in advance, as it is loaded from HuggingFace. Always make sure that the (SEP-CNN-FER) Python interpreter is selected and to open the repository from the project's root directory (SEP-CNN-FER).
 
     
