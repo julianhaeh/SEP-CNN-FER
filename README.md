@@ -2,8 +2,8 @@
 
 In this project we train a Convolutional Neural Network on a FER task from scratch. In order to accomplish this we explore different optimizations of the training pipeline and evaluate a variety of architectures. The final model is further analyzed using methods of Explainable AI, and presented in multiple demo scripts including a webcam demo.
 
-Once the project is setup, the webcam demo can be tested by running: Python -m Demo.infer_webcam
-There is also an video demo: python Demo/inference_video.py --input test_video.mp4 --output result_with_emotions.mp4, where test_video.mp4 is the path for the input video and result_with_emotions.mp4 is the name of the output file
+Once the project is setup, the webcam demo can be tested by running: "Python -m Demo.infer_webcam".
+There is also an video demo: "python Demo/inference_video.py --input test_video.mp4 --output result_with_emotions.mp4", where test_video.mp4 is the path for the input video and result_with_emotions.mp4 is the name of the output file.
 
 
 How to Setup: 
