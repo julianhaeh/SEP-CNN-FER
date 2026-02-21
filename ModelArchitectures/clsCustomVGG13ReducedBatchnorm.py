@@ -85,5 +85,5 @@ class CustomVGG13ReducedBatchnorm(nn.Module):
         return logits 
 
 if __name__ == "__main__":
-    model = CustomVGG13Reduced()
+    model = CustomVGG13ReducedBatchnorm()
     print("Total parameters", sum(p.numel() for p in model.parameters()))
