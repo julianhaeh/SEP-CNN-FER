@@ -29,20 +29,20 @@ CLASS_NAMES = [val for key, val in sorted(EMOTION_DICT.items())]
 
 valDataLoader = DataLoader(OurDatasetTuning(section='training', split='valid'), batch_size=BATCH_SIZE, shuffle=False)
       
-"""
+
 transforms_list = [
     ("No Augmentation", v2.Identity()),
     ("Horizontal Flip", v2.RandomHorizontalFlip(p=0.5)),
     ("Translation", v2.RandomAffine(degrees=0, translate=(0.1, 0.1))),
     ("Rotation", v2.RandomRotation(degrees=15)),
     ("Random Erasing", v2.RandomErasing(p=0.25)),
-    ("Combined", v2.Compose([
-        v2.RandomHorizontalFlip(p=0.5),
-        v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
-        v2.RandomRotation(degrees=15),]))    
+    #("Combined", v2.Compose([
+    #    v2.RandomHorizontalFlip(p=0.5),
+    #    v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+    #   v2.RandomRotation(degrees=15),]))    
 ]
-"""
 
+"""
 transforms_list = [
     ("Flip, Affine, Rotation", v2.Compose([v2.RandomHorizontalFlip(p=0.5), 
                                v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
@@ -57,7 +57,7 @@ transforms_list = [
     ("Rotation, Affine",       v2.Compose([v2.RandomRotation(degrees=15),
                                v2.RandomAffine(degrees=0, translate=(0.1, 0.1))]))
 ]
-
+"""
 # Global weights 
 class_weights = torch.tensor([1.03, 2.94, 1.02, 0.60, 0.91, 1.06])
 criterion = nn.CrossEntropyLoss(weight=class_weights)
@@ -216,7 +216,7 @@ def run_experiments():
             scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
             
             # Re-init Loader (ensures shuffle is reset based on seed)
-            trainDataLoader = DataLoader(OurDatasetTuning(split='train', custom_transform=transform), 
+            trainDataLoader = DataLoader(OurDatasetTuning(section='training', split='train', custom_transform=transform), 
                                          batch_size=BATCH_SIZE, shuffle=True)
 
             print(f" > Starting Run {i+1}/{NUM_RUNS} (Seed {current_seed})...")
