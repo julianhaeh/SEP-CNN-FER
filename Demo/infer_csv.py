@@ -58,7 +58,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input_dir", required=True)
     ap.add_argument("--output_csv", required=True)
-    ap.add_argument("--weights", default=r".\Experiments\Models\ReducedClassifier_Weighted_CE_Weighted_Acc_72.84_Model.pth")
+    ap.add_argument("--weights", default=r".\Experiments\Models\ReducedClassifier_Weighted_CE_EntireData.pth")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--no_face", action="store_true")
     ap.add_argument("--on_no_face", choices=["skip", "full", "zeros"], default="zeros")
