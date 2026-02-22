@@ -32,9 +32,8 @@ NUM_CLASSES = 6 # Must match training/checkpoint output and emotions order
 
 def preprocess(face_bgr):
     """
-    Prepares a raw face crop for the VGG13 classifier.
-    Steps included: Resize -> Grayscale -> Histogram Equalization -> Normalize to [-1, 1].
-    Histogram Equalization is used to handle varying webcam lighting conditions
+    Prepares a raw face crop for the classifier:
+    Resize -> Grayscale -> Normalize to [-1, 1].
     """
     face = cv2.resize(face_bgr, (64, 64), interpolation=cv2.INTER_AREA)
     face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
