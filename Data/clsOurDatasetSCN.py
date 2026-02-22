@@ -1,6 +1,7 @@
 """
 This file defines the SCNOurDataset class. It is a modified version of the OurDataset class, also returning the 
-index of each sample in the dataset, which is needed for relabeling during training.
+index of each sample in the dataset and the original label, which is needed for relabeling. It is only used for training 
+the SCN on the training data to make comparisons to other models.
 """
 from torchvision.transforms import v2
 import numpy as np

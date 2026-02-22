@@ -3,6 +3,7 @@ This file defines the OurDataset class, which downloads and preprocesses the Aff
 It can either load one of the datasets or a combined version of both. The preprocessing includes resizing images to 64x64 pixels, 
 filtering unwanted classes, remapping the labels to a common format, shuffeling the dataset and normalizing the images to [-1, 1].
 With the split argument the desired split can be chosen (train, test or all).
+This is the larger train-test split to compare different architectures, and to evaluate the test accuracy of our final model.
 """
 import numpy as np
 from datasets import load_dataset, concatenate_datasets, ClassLabel

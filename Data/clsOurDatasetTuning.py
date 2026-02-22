@@ -5,6 +5,8 @@ for tuning the optimizers, the optimizers hyperparameters, the loss function and
 this corresponds to the training section of our paper. It used the first 15% of training data as validation set. The other split is accessed  
 by section='architecture', this split is used for hyperparamter tuning of the architectures and uses the last 15% of the training data 
 as validation set. 
+This dataset is first used in the training section with section="taining", and then again used in the architecture section to tune different architectures such as the 
+CustomVGG13 variants and the GAP CNN variants. 
 """
 import numpy as np
 from datasets import load_dataset, concatenate_datasets, ClassLabel
