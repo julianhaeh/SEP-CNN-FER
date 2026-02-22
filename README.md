@@ -35,6 +35,7 @@ How to Setup:
         pip install optuna
         pip install ultralytics
         pip install datasets
+        pip install opencv-python
 
     3. Install the project in editable mode (This allows us to import the files as all other pip modules):
 
