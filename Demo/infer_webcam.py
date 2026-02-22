@@ -23,7 +23,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # Modules for model architecture, interpretability (Grad-CAM), and helper utilities
-from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
+from ModelArchitectures.clsReducedClassifierCustomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
 from Demo.gradcam import GradCAM
 from Demo.labels import EMOTIONS
 from ultralytics import YOLO
@@ -38,7 +38,6 @@ def preprocess(face_bgr):
     """
     face = cv2.resize(face_bgr, (64, 64), interpolation=cv2.INTER_AREA)
     face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-    face = cv2.equalizeHist(face)
     # Scale pixels to range [-1, 1] consistent with training preprocessing
     x = face.astype(np.float32) / 127.5 - 1
     x = torch.from_numpy(x)[None, None, :, :]  # [1,1,64,64]
@@ -51,7 +50,7 @@ def load_model(weights_path: str, device: torch.device):
     if not isinstance(state, dict):
         raise RuntimeError("Expected a state_dict for VGG13Reduced weights.")
 
-    model = CustomVGG13Reduced().to(device)
+    model = ReducedClassifierCustomVGG13Reduced().to(device)
     model.load_state_dict(state, strict=True)
     model.eval() # Set to evaluation mode (disables Dropout/BatchNorm updates)
 
@@ -63,7 +62,7 @@ def load_model(weights_path: str, device: torch.device):
 def main():
     # --- CLI Arguments ---
     ap = argparse.ArgumentParser()
-    ap.add_argument("--weights", default=r".\Experiments\Models\CustomVGG13_Original_Acc_72.30_Model.pth", help="VGG13Reduced weights .pth path (state_dict)")
+    ap.add_argument("--weights", default=r".\Experiments\Models\ReducedClassifier_Weighted_CE_EntireData.pth")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--camera", type=int, default=0, help="camera index (0 is default)")
     ap.add_argument("--flip", action="store_true", help="mirror webcam horizontally")

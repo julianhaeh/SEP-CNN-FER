@@ -19,6 +19,7 @@ from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from Data.clsOurDatasetTuning import OurDatasetTuning
 
 # --- PARAMETERS ---
+NUM_RUNS = 3
 EPOCHS = 55
 BATCH_SIZE = 32
 
@@ -174,77 +175,105 @@ def train_evaluate_pipeline(model, criterion, optimizer, scheduler, epochs=50):
     return loss_history, accuracy_history
 
 def run_experiments():
-    print("Starting Experiments...")
+    print(f"Starting Experiments ({NUM_RUNS} runs)...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs("Experiments/Plots", exist_ok=True)
 
     print("Len of Train Set:", len(trainDataLoader.dataset))
     print("Len of Validation Set:", len(valDataLoader.dataset))
 
-    # LOOP 1: Iterate over LOSS FUNCTIONS first
-    for loss_name, loss_fn in loss_configs:
-        print(f"\n=========================================")
-        print(f" Evaluating Loss Function: {loss_name}")
-        print(f"=========================================")
-        
-        # Dictionaries to store history for ALL optimizers for this specific loss
-        combined_loss_history = {}
-        combined_accuracy_history = {}
+    # Collect final accuracies across runs: {(loss_name, opt_name): [acc_run1, acc_run2, ...]}
+    all_runs_final_acc = {}
 
-        # LOOP 2: Iterate over OPTIMIZERS
-        for opt_name, opt_class, opt_kwargs in optimizer_configs:
-            print(f"\n   >>> Training with Optimizer: {opt_name}")
-            
-            # 1. INIT ARCHITECTURE
-            model = CustomVGG13Reduced()
-            model.apply(weights_init)   
+    for run in range(1, NUM_RUNS + 1):
+        print(f"\n#########################################")
+        print(f" RUN {run}/{NUM_RUNS}")
+        print(f"#########################################")
 
-            # 2. INIT OPTIMIZER & SCHEDULER
-            params = list(model.parameters())  
-            optimizer = opt_class(params, **opt_kwargs)
-            
-            if USE_SCHEDULER:
-                scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer, 
-                    T_max=EPOCHS
-                )
-            else:
-                scheduler = None
-            
-            # 3. TRAIN
-            l_hist, a_hist = train_evaluate_pipeline(model, loss_fn, optimizer, scheduler, epochs=EPOCHS)
-            
-            # Store history for combined plotting
-            combined_loss_history[opt_name] = l_hist
-            combined_accuracy_history[opt_name] = a_hist
+        # LOOP 1: Iterate over LOSS FUNCTIONS first
+        for loss_name, loss_fn in loss_configs:
+            print(f"\n=========================================")
+            print(f" Evaluating Loss Function: {loss_name}")
+            print(f"=========================================")
 
-            # 4. CONFUSION MATRIX (Per Run)
-            y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
-            cm_tensor = compute_confusion_matrix_torch(y_true, y_pred, num_classes=6)
-            
-            final_acc = a_hist[-1]
-            print(f"   [Final Test Accuracy for {opt_name}: {final_acc:.2f}% ]")
-            
-            # --- NEW: LOG RESULTS TO FILE ---
-            with open(LOG_FILE, "a") as f:
-                f.write(f"Loss: {loss_name} | Optimizer: {opt_name} | Final Acc: {final_acc:.2f}%\n")
-            print(f"   [Logged result to {LOG_FILE}]")
-            
-            cm_filename = f"Experiments/Plots/ConfMatrix_{loss_name}_{opt_name}.png"
-            plot_confusion_matrix(cm_tensor.numpy(), CLASS_NAMES, 
-                                  f"CM: {loss_name} + {opt_name}", 
-                                  cm_filename)
-        
-        # --- END OF OPTIMIZER LOOP ---
-        # Generate the combined plots for this specific Loss Function
-        
-        print(f"\n   >> Generating Combined Plots for {loss_name}...")
-        
-        loss_plot_path = f"Experiments/Plots/Comparison_Loss_{loss_name}.png"
-        plot_metric_comparison(combined_loss_history, "Training Loss", loss_name, loss_plot_path)
+            # Dictionaries to store history for ALL optimizers for this specific loss
+            combined_loss_history = {}
+            combined_accuracy_history = {}
 
-        acc_plot_path = f"Experiments/Plots/Comparison_Accuracy_{loss_name}.png"
-        plot_metric_comparison(combined_accuracy_history, "Validation Accuracy", loss_name, acc_plot_path)
+            # LOOP 2: Iterate over OPTIMIZERS
+            for opt_name, opt_class, opt_kwargs in optimizer_configs:
+                print(f"\n   >>> Training with Optimizer: {opt_name}")
+
+                # 1. INIT ARCHITECTURE
+                model = CustomVGG13Reduced()
+                model.apply(weights_init)
+
+                # 2. INIT OPTIMIZER & SCHEDULER
+                params = list(model.parameters())
+                optimizer = opt_class(params, **opt_kwargs)
+
+                if USE_SCHEDULER:
+                    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                        optimizer,
+                        T_max=EPOCHS
+                    )
+                else:
+                    scheduler = None
+
+                # 3. TRAIN
+                l_hist, a_hist = train_evaluate_pipeline(model, loss_fn, optimizer, scheduler, epochs=EPOCHS)
+
+                # Store history for combined plotting
+                combined_loss_history[opt_name] = l_hist
+                combined_accuracy_history[opt_name] = a_hist
+
+                # 4. CONFUSION MATRIX (Per Run)
+                y_true, y_pred = get_all_predictions_torch(model, valDataLoader, device)
+                cm_tensor = compute_confusion_matrix_torch(y_true, y_pred, num_classes=6)
+
+                final_acc = a_hist[-1]
+                print(f"   [Final Test Accuracy for {opt_name}: {final_acc:.2f}% ]")
+
+                # Collect final accuracy for mean computation
+                key = (loss_name, opt_name)
+                if key not in all_runs_final_acc:
+                    all_runs_final_acc[key] = []
+                all_runs_final_acc[key].append(final_acc)
+
+                # --- LOG RESULTS TO FILE ---
+                with open(LOG_FILE, "a") as f:
+                    f.write(f"Run {run} | Loss: {loss_name} | Optimizer: {opt_name} | Final Acc: {final_acc:.2f}%\n")
+                print(f"   [Logged result to {LOG_FILE}]")
+
+                cm_filename = f"Experiments/Plots/ConfMatrix_{loss_name}_{opt_name}_Run{run}.png"
+                plot_confusion_matrix(cm_tensor.numpy(), CLASS_NAMES,
+                                      f"CM: {loss_name} + {opt_name} (Run {run})",
+                                      cm_filename)
+
+            # --- END OF OPTIMIZER LOOP ---
+            # Generate the combined plots for this specific Loss Function and Run
+
+            print(f"\n   >> Generating Combined Plots for {loss_name} (Run {run})...")
+
+            loss_plot_path = f"Experiments/Plots/Comparison_Loss_{loss_name}_Run{run}.png"
+            plot_metric_comparison(combined_loss_history, "Training Loss", f"{loss_name} (Run {run})", loss_plot_path)
+
+            acc_plot_path = f"Experiments/Plots/Comparison_Accuracy_{loss_name}_Run{run}.png"
+            plot_metric_comparison(combined_accuracy_history, "Validation Accuracy", f"{loss_name} (Run {run})", acc_plot_path)
+
+    # --- REPORT MEAN METRICS ACROSS ALL RUNS ---
+    print(f"\n#########################################")
+    print(f" MEAN VALIDATION ACCURACY ACROSS {NUM_RUNS} RUNS")
+    print(f"#########################################")
+
+    with open(LOG_FILE, "a") as f:
+        f.write(f"\n--- Mean Results Across {NUM_RUNS} Runs ---\n")
+        for (loss_name, opt_name), accs in all_runs_final_acc.items():
+            mean_acc = np.mean(accs)
+            std_acc = np.std(accs)
+            line = f"Loss: {loss_name} | Optimizer: {opt_name} | Mean Acc: {mean_acc:.2f}% +/- {std_acc:.2f}%"
+            print(line)
+            f.write(line + "\n")
 
 if __name__ == "__main__":
     run_experiments()
