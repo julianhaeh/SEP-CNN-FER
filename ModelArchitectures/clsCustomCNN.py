@@ -1,6 +1,6 @@
 """
 This file defines a CustomCNN class, which allows for flexible definition of CNN architectures. For details on how to initialize the architectures, 
-see the documentation of the __init__ method.
+see the documentation of the __init__ method. We used it for the CustomVGG13 section as well as for the GAP CNN section.
 """
 
 

@@ -1,3 +1,10 @@
+"""
+This script runs experiments to evaluate different data augmentation techniques on the CustomVGG13Reduced architecture. 
+It generates combined training loss and accuracy plots per transformation (comparing all runs) and also logs the average final accuracy across runs for each transformation in 
+'data_augmentation_stats.txt'. 
+This script was used for the data augmentation section of the training section in the paper.
+"""
+
 import torch.nn.init as init
 import torch
 import torch.nn as nn

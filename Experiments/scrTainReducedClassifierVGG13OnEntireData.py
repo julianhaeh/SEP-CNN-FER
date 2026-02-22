@@ -1,3 +1,8 @@
+"""
+This script trains the ReducedClassifierCustomVGG13Reduced architecture on the entire dataset.
+The RC-VGG13 is our final architecture, we trained it on the entire data for the demo in order to maximize perfomance.
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -15,7 +20,7 @@ from Data.clsOurDataset import OurDataset
 EPOCHS = 75
 BATCH_SIZE = 32
 
-# Load entire dataset
+# Load entire dataset (This is our demo model, thus to maximize performance we use the entire data)
 trainDataLoader = DataLoader(OurDataset(split='all'), batch_size=BATCH_SIZE, shuffle=True)
 
 # Global weights

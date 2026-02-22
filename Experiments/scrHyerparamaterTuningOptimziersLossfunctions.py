@@ -1,7 +1,8 @@
 """
 This script runs experiments to evaluate different loss functions and optimizers on the CustomVGG13Reduced architecture.
 It generates combined training loss and accuracy plots per Loss function (comparing all optimizers).
-It appends final test results to 'loss_optimization_log.txt'.
+It appends final test results to 'loss_optimization_log.txt'. 
+This script was used for the optimizers and loss functions section of the training section in the paper.
 """
 import torch
 import torch.nn as nn

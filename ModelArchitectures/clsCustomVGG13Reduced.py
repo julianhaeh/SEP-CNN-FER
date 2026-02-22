@@ -1,8 +1,10 @@
 """
 This file defines a CustomVGG13 architecture, as it was introcuded in the paper "Training Deep Networks for Facial Expression Recognition
 with Crowd-Sourced Label Distribution" by Barsoum et al. 2016. We chose this architecture since it has only around 8.7 million parameters, 
-which is small enough to be train on our rather small dataset without overfitting too much, while still being a deep architecture. 
+which is small enough to be train on our rather small dataset without overfitting too much, while still being a deep architecture. It is used for the tuning of the 
+training pipeline. During the CustomVGG13 section we added batchnorm, which can be found in the file clsCustomVGG13ReducedBatchnorm.py. 
 """
+
 import torch
 import torch.nn as nn
 

@@ -3,12 +3,9 @@ This is a script for fitting a Self Correcting Network (SCN), implemented in cls
 It produces a lost history plot and confusion matrix for each optimizer tested. 
 The SCN comes from the paper "Suppressing Uncertainties for Large-Scale Facial Expression Recognition" by Wang et al. 2020.
 In their paper they provided an python implementation, which this script as well as the SCN wrapper are heavily based on. 
-We adjusted some details, since we encountered crashes. We also tried to update the relabeling logic to the one described in the paper, where
-it would only update the low importance samples instead of considering all.
-The SCN loss work by adding a self-attention mechanism to to the architecture, which can weight the models importance, thus weightening samples whose correct
-label is unclear, either because of wrong labeling or ambiguous facial expression. It adds a rank regularization loss to the standard cross-entropy loss, 
-which forces the model to give higher attention weights to "easy" samples, thus only eliminating the uncertain samples during training. In addition to that, 
-the SCN relabels samples when it is really certain about its prediction, which can lead to the model cleaning up the wrong labeling.  
+We adjusted the relabeling logic to fit the paper, since the one in the repository linked in the paper had some differences.
+The difference was that relabeling was also performed on the high importance group, and no gamma parameter was used.
+This script was used to train the model in the Self Curing Network section of the paper.
 """
 import torch
 import torch.nn as nn

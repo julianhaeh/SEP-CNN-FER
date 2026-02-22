@@ -1,3 +1,7 @@
+"""
+This is a slightly modified version of the CustomVGG13Reduced architecture, with batch normalization layers added after each convolutional and fully connected layer. 
+This architecture was used as base architecture for the CustomVGG13 section.
+"""
 import torch
 import torch.nn as nn
 

@@ -1,3 +1,9 @@
+"""
+This script runs different variant of the CustomVGG13 architecture, the first ones being the variant in the table of the CustomVGG13 section. We trained multiple 
+variant, more than there are in the table, to determine evaluate different combinations of the modifications. This script lead to the RC-VGG13 architecture, 
+which is our final architecture. It can be seen as configuration "VGG13_Removed1Layer_Classifier_E" here.
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim

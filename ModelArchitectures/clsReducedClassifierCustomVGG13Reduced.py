@@ -1,3 +1,8 @@
+"""
+This is our final architecture, which we call RC-VGG13 (Reduced Classifier VGG13). It is a version of the CustomVGG13 with a reduced classifier, which was determined to be optimal by tuning
+in the srcVGG13ArchitectureTuning.py script. It can be seen as configuration "VGG13_Removed1Layer_Classifier_E" here. This is also the architecture used in the Demo scripts.
+"""
+
 import torch.nn as nn
 
 INPUT_SHAPE = (1, 64, 64)  # Hardcoded input shape for our data

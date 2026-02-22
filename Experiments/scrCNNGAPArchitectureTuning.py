@@ -1,3 +1,6 @@
+"""
+This script trains multiple GAP CNN architectures, based on the CustomCNN class. These are the experiments from the Coming Up with Our Own CNNS section regarding the GAP architectures.
+"""
 import torch
 import torch.nn as nn
 import torch.optim as optim

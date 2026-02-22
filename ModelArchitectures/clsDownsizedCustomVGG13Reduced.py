@@ -1,7 +1,6 @@
 """
-This file defines a CustomVGG13 architecture, as it was introcuded in the paper "Training Deep Networks for Facial Expression Recognition
-with Crowd-Sourced Label Distribution" by Barsoum et al. 2016. We chose this architecture since it has only around 7.7 million parameters, 
-which is small enough to be train on our rather small dataset without overfitting too much, while still being a deep architecture. 
+This file contains a Downsized Version of the CustomVGG13 architecture. We first determined this version as final model, but we noticed that the final block of the CustomVGG13, 
+which this architecture removed, indeed is important. So we did not stick to this architecture.
 """
 import torch
 import torch.nn as nn

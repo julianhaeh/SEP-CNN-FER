@@ -1,3 +1,6 @@
+"""
+This is a Bayeian Optimization script using Optuna to tune hyperparameters for a given CNN model. This way the hyperparameter for the VGG13 architectures and the GAP CNN was determined.
+"""
 import torch
 import torch.nn as nn
 import torch.optim as optim

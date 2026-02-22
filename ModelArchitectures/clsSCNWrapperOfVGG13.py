@@ -1,14 +1,10 @@
 """"
 This file defines the Self Curing Network (SCN) wrapper around our VGG13 architecture. 
 The SCN comes from the paper "Suppressing Uncertainties for Large-Scale Facial Expression Recognition" by Wang et al. 2020.
-In their paper they provided an python implementation, which file is heavily depended on. 
-The SCN loss work by adding a self-attention mechanism to to the architecture, which can weight the models importance, thus weightening samples whose correct
-label is unclear, either because of wrong labeling or ambiguous facial expression. It adds a rank regularization loss to the standard cross-entropy loss, 
-which forces the model to give higher attention weights to "easy" samples, thus only eliminating the uncertain samples during training. In addition to that, 
-the SCN relabels samples when it is really certain about its prediction, which can lead to the model cleaning up the wrong labeling.  
-The SCN wrapper class is used in the experiment script pltSCNLoss.py.
+In their paper they provided an python implementation, which this file is heavily depended on.   
+The SCN wrapper class is used in the experiment script pltSCNLoss.py, and in the paper used in the Self Curing Network section of the architecture section.
+The SCN is wrapped around the Reduced Classifier Custom VGG13 architecture, also called RC-VGG13 in our paper.
 """
-
 import torch.nn as nn
 import torch
 from torch.nn import init

@@ -1,3 +1,6 @@
+"""
+This script was just a Proof of Concept for the CustomCNN class, it was not used in the paper.
+"""
 from ModelArchitectures.clsCustomCNN import CustomCNN
 from Data.clsOurDataset import OurDataset
 from torch.utils.data import DataLoader

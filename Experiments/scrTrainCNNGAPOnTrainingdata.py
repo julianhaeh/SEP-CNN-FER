@@ -1,3 +1,7 @@
+"""
+This script was used in the Comping Up with Our Own CNNs Section for training the best performing GAP CNN on the Training data and comparing it on the test data.
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim

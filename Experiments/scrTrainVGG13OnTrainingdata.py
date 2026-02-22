@@ -1,3 +1,8 @@
+"""
+This script is used to train the different variant of the CustomVGG13 on the Training data, in order to compare them on the test data. It was used in the CustomvGG13 section of  
+the architecture section, as well as for the comparisons in other sections.
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -36,7 +41,7 @@ LOSS_CONFIGS = [
 ]
 
 USE_PRETRAINED = None # Set to None to train from scratch, otherwise will load weights from the path
-USE_ORIGINAL_VGG13 = True # If True, uses the original CustomVGG13Reduced architecture, if false uses the downsized one
+USE_ORIGINAL_VGG13 = False # If True, uses the original CustomVGG13Reduced architecture, if false uses the downsized one
 
 # --- HELPER FUNCTIONS ---
 

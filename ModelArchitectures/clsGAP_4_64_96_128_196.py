@@ -1,3 +1,7 @@
+"""
+This is the best performing GAP CNN architecture from the Coming Up with Our Own CNNs section. It was determined in the srcCNNGAPArchitectureTuning.py script, 
+where it was the best performing archiecture on the validation set. 
+"""
 import torch
 import torch.nn as nn
 
