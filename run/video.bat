@@ -16,7 +16,7 @@ set "OUT=%OUTDIR%\%~n1_out.mp4"
 echo Input : %IN%
 echo Output: %OUT%
 
-python -m Demo.infer_video --input "%IN%" --output "%OUT%" --weights ".\Experiments\Models\ReducedClassifier_Weighted_CE_Weighted_Acc_72.84_Model.pth" --every_n 4
+python -m Demo.infer_video --input "%IN%" --output "%OUT%"
 
 echo.
 echo Done. Output saved to:
