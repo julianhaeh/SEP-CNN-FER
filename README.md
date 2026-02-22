@@ -15,14 +15,14 @@ How to Setup:
 
         git clone https://github.com/julianhaeh/SEP-CNN-FER
 
-    1. Setup a new virtual enviorment: 
+    2. Setup a new virtual environment: 
 
         conda create -n "SEP-CNN-FER" python=3.12.0
         conda activate "SEP-CNN-FER"
 
         Make sure the 3.12.0 (SEP-CNN-FER) Python interpreter is selected
 
-    2. Install the dependencies:
+    3. Install the dependencies:
 
         We will use pip to install the dependencies:
         conda install pip
@@ -37,7 +37,7 @@ How to Setup:
         pip install datasets
         pip install opencv-python
 
-    3. Install the project in editable mode (This allows us to import the files as all other pip modules):
+    4. Install the project in editable mode (This allows us to import the files as all other pip modules):
 
         Ensure your terminal is in the project's root directory (SEP-CNN-FER). If necessary, navigate there:
         Example on windows: cd SEP-CNN-FER
