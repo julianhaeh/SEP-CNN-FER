@@ -19,7 +19,7 @@ echo Output: %OUT%
 python -m Demo.infer_video --input "%IN%" --output "%OUT%"
 
 echo.
-echo Done. Output saved to:
+echo COMPLETE. Output saved as:
 echo %OUT%
 explorer "%OUTDIR%"
 pause
