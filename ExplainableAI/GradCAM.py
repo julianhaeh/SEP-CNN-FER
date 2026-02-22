@@ -33,6 +33,9 @@ class OurGradCAM:
         self.model = model
     
     def GradCAM(self, image, target_layer = None):
+        """
+        shows Grad-CAM of one input image, with a chosen layer (if None: last layer)
+        """
         layers = find_all_conv_layers(self.model)
         if target_layer is None:
             layer = layers[-1][1]
@@ -48,7 +51,12 @@ class OurGradCAM:
         plt.show()
         return visualization, target_layer
 
-    def GradCAMmany(self, images, target_layer = None):
+    def kGradCAMs(self, images, target_layer = None):
+        """
+        shows Grad-CAMs for list of k images with a chosen layer (if None: last layer)
+        """
+        k = len(images)
+        k = k - (k % 4)
         layers = find_all_conv_layers(self.model)
         if target_layer is None:
             layer = layers[-1][1]
@@ -56,19 +64,15 @@ class OurGradCAM:
             layer = layers[target_layer][1]
         cam = GradCAM(self.model, target_layers = [layer])
         GradCAMs = []
-        outputs = []
-        for i in range (20):
+        for i in range (k):
             grayscale_cam = cam(input_tensor=images[i])[0]
             base_img = images[i][0].cpu().numpy()
             base_img = (base_img - base_img.min()) / (base_img.max() - base_img.min())
             rgb_img = np.stack([base_img]*3, axis=-1)[0]
             GradCAMs.append(show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True))
-            outputs.append(self.model(images[i]))
-        fig, axes = plt.subplots(4, 5, figsize=(12, 10))
+        fig, axes = plt.subplots(4, int(k/4))
         for idx, ax in enumerate(axes.flat):
-            pred = F.softmax(outputs[idx], dim = 1)
             ax.imshow(GradCAMs[idx])
-            ax.set_title(pred[0, 5].item())
             ax.axis("off")
         
         plt.tight_layout()

@@ -33,6 +33,9 @@ class OurFeatureMaps:
         self.model = model
     
     def FeatureMaps(self, img, target_layer = None):
+        """
+        shows first 16 feature maps of a chosen image and a chosen layer
+        """
         layers = find_all_conv_layers(self.model)
         if target_layer is None:
             layer = layers[-1][1]
@@ -62,15 +65,18 @@ class OurFeatureMaps:
         plt.tight_layout()
         plt.show()
 
-    def get_topk_feature_maps(self, image, layer, k=16, metric="max"):
+    def get_top_feature_maps(self, image, target_layer = None, metric="mean"):
         """
-        model: dein CNN
-        image: Tensor [1, C, H, W]
-        layer: das Layer-Objekt, z.B. model.features[27]
-        k: Anzahl der Top-k Feature Maps
-        metric: "mean", "max" oder "l2"
+        image: one tensor image
+        layer: xth convolutional layer, if None then last layer
+        metric: "mean" oder "max"
+        shows top 16 feature maps of chosen metric
         """
-
+        layers = find_all_conv_layers(self.model)
+        if target_layer is None:
+            layer = layers[-1][1]
+        else:
+            layer = layers[target_layer][1]
         features = {}
 
         def hook_fn(module, input, output):
@@ -85,22 +91,19 @@ class OurFeatureMaps:
             scores = maps.view(C, -1).mean(dim=1)
         elif metric == "max":
             scores = maps.view(C, -1).max(dim=1).values
-        elif metric == "l2":
-            scores = torch.norm(maps.view(C, -1), p=2, dim=1)
         else:
             raise ValueError("Unknown metric")
 
-        topk_idx = torch.topk(scores, k).indices
-
-        topk_maps = maps[topk_idx]
+        top_idx = torch.topk(scores, 16).indices
+        top_maps = maps[top_idx]
 
         fig, ax = plt.subplots(4, 4, figsize=(8, 8))
 
         for i in range(16):
-            ax[i // 4, i % 4].imshow(topk_maps[i].cpu(), cmap="viridis")
+            ax[i // 4, i % 4].imshow(top_maps[i].cpu(), cmap="viridis")
             ax[i // 4, i % 4].axis("off")
 
         plt.tight_layout()
         plt.show()
 
-        return topk_maps, topk_idx
+        return top_maps, top_idx
