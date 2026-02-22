@@ -3,29 +3,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
-from Data.clsOurDatasetSCN import OurDatasetSCN
 import matplotlib.pyplot as plt
-from torch.utils.data import DataLoader
 import numpy as np
 import random
 from Data.clsOurDataset import OurDataset
-from sklearn.decomposition import PCA
 from ModelArchitectures.clsCustomVGG13Reduced import CustomVGG13Reduced
 from ModelArchitectures.clsDownsizedCustomVGG13Reduced import DownsizedCustomVGG13Reduced
-from ModelArchitectures.clsMobileFaceNet import MobileFacenet
 from ModelArchitectures.clsGAP_4_64_96_128_196 import GAP_4_64_96_128_196
 from ModelArchitectures.clsReducedClassifierCustomVGG13Reduced import ReducedClassifierCustomVGG13Reduced
 from ExplainableAI.GradCAM import OurGradCAM
 from ExplainableAI.SaliencyMaps import OurSaliencyMaps
 from ExplainableAI.FeatureMaps import OurFeatureMaps
-class ClassificationHead(nn.Module):
-    def __init__(self, embedding_dim=128, num_classes=6):
-        super().__init__()
-        self.weight = nn.Parameter(torch.randn(num_classes, embedding_dim))
-        self.bias = nn.Parameter(torch.zeros(num_classes))
-
-    def forward(self, x):
-        return F.linear(x, self.weight, self.bias)
 def show_image (image_to_show):
     # converts tensor to numpy image and shows it
     imgshow = image_to_show.squeeze(0).permute(1, 2, 0).numpy()
