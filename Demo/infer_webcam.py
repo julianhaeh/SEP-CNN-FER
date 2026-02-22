@@ -105,14 +105,11 @@ def main():
         if not out.isOpened():
             raise RuntimeError("VideoWriter failed. Try output .avi and codec XVID.")
 
-    # --- Persistent State (Temporal Consistency) ---
+    # State Management
     last_label, last_conf, last_heat = "?", 0.0, None
     last_roi, last_probs = (0, 0, W, H), None
+    roi_smooth, miss_count, frame_idx = None, 0, 0
 
-    roi_smooth = None
-    miss_count = 0
-
-    frame_idx = 0
     fps_ema = 0.0
     t_prev = time.time()
 
@@ -132,7 +129,7 @@ def main():
             if not args.no_face:
                 bb = largest_face_bbox(frame, yolo_model)
                 det_roi = None
-
+            
                 if bb is not None:
                     bb = normalize_bbox(bb, W, H)
                     if bb is not None:
@@ -168,8 +165,8 @@ def main():
                 # State Cleanup: If tracking is lost, reset visualization memory
                 if roi_smooth is None:
                     roi = (0, 0, W, H)
-                    last_heat = None  # Wipes heatmap memory
-                    last_roi = (0, 0, W, H) # Reset ROI memory
+                    last_heat = None           # Wipe heatmap memory
+                    last_roi = (0, 0, W, H)    # Reset ROI memory
                 else:
                     roi = roi_smooth
 

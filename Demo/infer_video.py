@@ -109,8 +109,7 @@ def main():
 
     # State Management
     last_label, last_conf, last_heat = "?", 0.0, None
-    last_probs = np.zeros(NUM_CLASSES, dtype=np.float32)
-    last_roi = (0, 0, W, H)
+    last_roi, last_probs = (0, 0, W, H), None
     roi_smooth, miss_count, frame_idx = None, 0, 0
 
     try:
@@ -118,7 +117,7 @@ def main():
             ok, frame = cap.read()
             if not ok: break
 
-            # --- 1: FACE DETECTION & TRACKING ---
+            # --- 1. Face Detection & Tracking (ROI Smoothing) ---
             frame_idx += 1
             roi = (0, 0, W, H)
 
@@ -151,24 +150,24 @@ def main():
                 # State Cleanup: If tracking is lost, reset visualization memory
                 if roi_smooth is None:
                     roi = (0, 0, W, H)
-                    last_heat = None          # wipe heatmap memory
+                    last_heat = None          # Wipe heatmap memory
                     last_roi = (0, 0, W, H)   # reset ROI memory
                 else:
                     roi = roi_smooth
 
-            # --- 2: INFERENCE & EXPLAINABILITY (GRAD-CAM) ---
+            # --- 2. Inference & Explainability (Grad-CAM) ---
             x, y, w, h = roi
             crop = frame[y:y+h, x:x+w]
+
             if crop.size != 0 and (frame_idx % args.every_n == 0) and (args.no_face or roi_smooth is not None):
                 inp = preprocess(crop).to(device)
                 inp.requires_grad_(True)
                 heat0, logits = cam_engine(inp)
                 raw_probs = F.softmax(logits, dim=1).detach().cpu().numpy()[0]
 
-                # --- 3: TEMPORAL SMOOTHING ---
-                # We use an Exponential Moving Average (EMA) to prevent flickering
-                # Apply EMA smoothing to probabilities to stabilize the UI
-                last_probs = 0.8 * last_probs + 0.2 * raw_probs
+                # EMA smoothing over time
+                if last_probs is None: last_probs = raw_probs.copy()
+                else: last_probs = 0.8 * last_probs + 0.2 * raw_probs
 
                 pred_smooth = int(np.argmax(last_probs))
                 new_conf = float(last_probs[pred_smooth])
@@ -187,7 +186,7 @@ def main():
                     last_conf = 0.8 * last_conf + 0.2 * new_conf
                     last_heat = 0.8 * last_heat + 0.2 * new_heat
 
-            # --- Visual Rendering: Overlaying Bounding Boxes, Heatmaps, and Emotion Rankings ---
+            # --- 3. Rendering Output ---
             vis = frame.copy()
 
             # Status Update: No face detected and scoreboard reset
