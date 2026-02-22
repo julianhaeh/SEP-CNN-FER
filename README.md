@@ -49,4 +49,38 @@ How to Setup:
     the repository from the project's root directory (SEP-CNN-FER), torch.save or 
     torch.load may cause trouble otherwise.
 
+## For Windows demo specifically
+
+1. Open the `run` folder in File Explorer:
+
+    - Double-click `webcam.bat` to start the webcam demo.
+    - Drag and drop an `.mp4` file onto `video.bat`.
+    - Drag and drop an image folder onto `csv.bat`.
+
+2. Outputs (videos and CSV files) will be saved in the `outputs` folder.
+
+## Demo commands cross platform (run from repo root)
+
+### macOS / Linux
     
+If python doesn’t work, try python3
+
+    Webcam:
+    python3 -m Demo.infer_webcam --weights "./Experiments/Models/ReducedClassifier_Weighted_CE_EntireData.pth" --flip
+
+    Video:
+    python3 -m Demo.infer_video --input "/path/to/input.mp4" --output "/path/to/out.mp4" --weights "./Experiments/Models/ReducedClassifier_Weighted_CE_EntireData.pth"
+
+    CSV:
+    python3 -m Demo.infer_csv --input_dir "/path/to/images_folder" --output_csv "/path/to/preds.csv" --weights "./Experiments/Models/ReducedClassifier_Weighted_CE_EntireData.pth"
+
+### Windows
+
+    Webcam:
+    python -m Demo.infer_webcam --flip
+
+    Video:
+    python -m Demo.infer_video --input "C:\path\to\input.mp4" --output "C:\path\to\out.mp4"
+    
+    CSV:
+    python -m Demo.infer_csv --input_dir "C:\path\to\images_folder" --output_csv "C:\path\to\preds.csv"

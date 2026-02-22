@@ -117,7 +117,7 @@ def main():
     fps_ema = 0.0
     t_prev = time.time()
 
-    print("Demo running. Press 'q' or ESC to quit.")
+    print("Demo running. Press Q / ESC to quit.")
 
     try:
         while True:
@@ -255,6 +255,9 @@ def main():
             fps_ema = fps_inst if fps_ema == 0.0 else (0.9 * fps_ema + 0.1 * fps_inst)
             t_prev = t_now
             vis = draw_text_box(vis, f"FPS: {fps_ema:.1f}", 10, H - 10, scale=0.7, thickness=2)
+
+            exit_shift = 275 
+            vis = draw_text_box(vis, "Press Q / ESC to quit", W - exit_shift, H - 10, anchor="br", scale=0.7, thickness=2)
 
             cv2.imshow("FER Webcam Demo", vis)
             if out is not None: out.write(vis)
